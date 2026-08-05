@@ -26,6 +26,49 @@ const CATEGORY_META = {
 
 const CATEGORY_ORDER = ["tables", "squares", "cubes", "fractions", "quickpct"];
 
+const ABSOLUTE_LIMITS = {
+  tablesBase: [2, 25],
+  tablesMult: [1, 20],
+  squaresN: [1, 25],
+  cubesN: [1, 25],
+  fractionsMaxDen: [2, 25],
+  quickpctMult: [2, 60],
+};
+
+function defaultRanges() {
+  return {
+    tables: { base: [2, 25], mult: [2, 12] },
+    squares: { n: [1, 25] },
+    cubes: { n: [1, 25] },
+    fractions: { maxDen: 25 },
+    quickpct: { mult: [2, 30] },
+  };
+}
+
+const DIFFICULTY_PRESETS = {
+  easy: {
+    tables: { base: [2, 10], mult: [2, 5] },
+    squares: { n: [1, 10] },
+    cubes: { n: [1, 10] },
+    fractions: { maxDen: 10 },
+    quickpct: { mult: [2, 10] },
+  },
+  medium: {
+    tables: { base: [2, 20], mult: [2, 10] },
+    squares: { n: [1, 20] },
+    cubes: { n: [1, 15] },
+    fractions: { maxDen: 20 },
+    quickpct: { mult: [2, 20] },
+  },
+  hard: {
+    tables: { base: [11, 25], mult: [6, 12] },
+    squares: { n: [15, 25] },
+    cubes: { n: [12, 25] },
+    fractions: { maxDen: 25 },
+    quickpct: { mult: [15, 40] },
+  },
+};
+
 /* ============================================================
    HELPERS
    ============================================================ */
@@ -64,9 +107,10 @@ function numDistractors(answer, spread, count = 3) {
    returns { category, key, keyLabel, prompt, answer, type, options?, checkFillBlank }
    ============================================================ */
 
-function genTables(forceType) {
-  const base = randInt(2, 25);
-  const mult = randInt(2, 12);
+function genTables(forceType, ranges) {
+  const r = ranges.tables;
+  const base = randInt(r.base[0], r.base[1]);
+  const mult = randInt(r.mult[0], r.mult[1]);
   const answer = base * mult;
   const asMcq = forceType ? forceType === "mcq" : Math.random() < 0.5;
   const prompt = `${base} × ${mult} = ?`;
@@ -77,8 +121,9 @@ function genTables(forceType) {
   return { category: "tables", key: base, keyLabel: base, prompt, answer, type: "fill" };
 }
 
-function genSquares(forceType) {
-  const n = randInt(1, 25);
+function genSquares(forceType, ranges) {
+  const r = ranges.squares;
+  const n = randInt(r.n[0], r.n[1]);
   const answer = n * n;
   const asMcq = forceType ? forceType === "mcq" : Math.random() < 0.5;
   const prompt = `${n}² = ?`;
@@ -89,8 +134,9 @@ function genSquares(forceType) {
   return { category: "squares", key: n, keyLabel: n, prompt, answer, type: "fill" };
 }
 
-function genCubes(forceType) {
-  const n = randInt(1, 25);
+function genCubes(forceType, ranges) {
+  const r = ranges.cubes;
+  const n = randInt(r.n[0], r.n[1]);
   const answer = n * n * n;
   const asMcq = forceType ? forceType === "mcq" : Math.random() < 0.5;
   const prompt = `${n}³ = ?`;
@@ -102,8 +148,11 @@ function genCubes(forceType) {
   return { category: "cubes", key: n, keyLabel: n, prompt, answer, type: "fill" };
 }
 
-function genFractions(forceType) {
-  const [num, den] = pick(FRACTIONS);
+function genFractions(forceType, ranges) {
+  const maxDen = ranges.fractions.maxDen;
+  const pool = FRACTIONS.filter(([, d]) => d <= maxDen);
+  const usable = pool.length >= 4 ? pool : FRACTIONS;
+  const [num, den] = pick(usable);
   const key = `${num}/${den}`;
   const directionA = Math.random() < 0.6; // fraction -> %
   if (directionA) {
@@ -113,7 +162,7 @@ function genFractions(forceType) {
     const asMcq = forceType ? forceType === "mcq" : Math.random() < 0.6;
     if (asMcq) {
       const distractors = [];
-      const others = shuffle(FRACTIONS.filter((f) => f[0] !== num || f[1] !== den)).slice(0, 6);
+      const others = shuffle(usable.filter((f) => f[0] !== num || f[1] !== den)).slice(0, 6);
       for (const [n2, d2] of others) {
         const lbl = pctLabel(n2, d2);
         if (lbl !== answerLabel && !distractors.includes(lbl)) distractors.push(lbl);
@@ -142,7 +191,7 @@ function genFractions(forceType) {
       };
     }
     const prompt = `${label}% = ? (lowest terms fraction)`;
-    const others = shuffle(FRACTIONS.filter((f) => f[0] !== num || f[1] !== den)).slice(0, 6);
+    const others = shuffle(usable.filter((f) => f[0] !== num || f[1] !== den)).slice(0, 6);
     const distractors = [];
     for (const [n2, d2] of others) {
       const [a, b] = simplify(n2, d2);
@@ -155,9 +204,10 @@ function genFractions(forceType) {
   }
 }
 
-function genQuickPct(forceType) {
+function genQuickPct(forceType, ranges) {
+  const r = ranges.quickpct;
   const [num, den] = pick(QUICK_PCT);
-  const mult = randInt(2, 30);
+  const mult = randInt(r.mult[0], r.mult[1]);
   const base = den * mult;
   const answer = (base * num) / den;
   const label = pctLabel(num, den);
@@ -223,6 +273,9 @@ export default function BuddhiDrill() {
     tables: true, squares: true, cubes: true, fractions: true, quickpct: true,
   });
   const [answerMode, setAnswerMode] = useState("mixed"); // 'mixed' | 'mcq' | 'fill'
+  const [ranges, setRanges] = useState(DIFFICULTY_PRESETS.medium);
+  const [difficultyLabel, setDifficultyLabel] = useState("medium"); // 'easy' | 'medium' | 'hard' | 'custom'
+  const [showCustomize, setShowCustomize] = useState(false);
   const [question, setQuestion] = useState(null);
   const [selected, setSelected] = useState(null);
   const [fillValue, setFillValue] = useState("");
@@ -290,23 +343,23 @@ export default function BuddhiDrill() {
     let guard = 0;
     // in weak mode, retry generation a few times hoping to land on a weak key
     if (weakMode) {
-      let bestQ = GENERATORS[cat](forceType);
+      let bestQ = GENERATORS[cat](forceType, ranges);
       let bestW = weightForItem(statsSnapshot, cat, bestQ.key);
       while (guard < 5) {
         guard++;
-        const cand = GENERATORS[cat](forceType);
+        const cand = GENERATORS[cat](forceType, ranges);
         const w = weightForItem(statsSnapshot, cat, cand.key);
         if (w > bestW) { bestW = w; bestQ = cand; }
       }
       q = bestQ;
     } else {
-      q = GENERATORS[cat](forceType);
+      q = GENERATORS[cat](forceType, ranges);
     }
     setQuestion(q);
     setSelected(null);
     setFillValue("");
     setFeedback(null);
-  }, [pickCategory, weakMode, answerMode]);
+  }, [pickCategory, weakMode, answerMode, ranges]);
 
   useEffect(() => {
     if (loaded && !question) nextQuestion(stats);
@@ -416,10 +469,45 @@ export default function BuddhiDrill() {
     });
   }
 
+  function applyDifficulty(label) {
+    setDifficultyLabel(label);
+    setRanges(JSON.parse(JSON.stringify(DIFFICULTY_PRESETS[label])));
+  }
+
+  function clamp(val, lo, hi) {
+    if (Number.isNaN(val)) return lo;
+    return Math.min(Math.max(val, lo), hi);
+  }
+
+  // updates one end (0=min, 1=max) of a two-value range for a category/field,
+  // e.g. updateRangePair('tables', 'base', 0, 5)
+  function updateRangePair(cat, field, idx, rawValue) {
+    const limitsKey = `${cat}${field.charAt(0).toUpperCase()}${field.slice(1)}`;
+    const [lo, hi] = ABSOLUTE_LIMITS[limitsKey] || [1, 99];
+    const value = clamp(parseInt(rawValue, 10), lo, hi);
+    setDifficultyLabel("custom");
+    setRanges((r) => {
+      const pair = [...r[cat][field]];
+      pair[idx] = value;
+      if (pair[0] > pair[1]) {
+        if (idx === 0) pair[1] = pair[0]; else pair[0] = pair[1];
+      }
+      return { ...r, [cat]: { ...r[cat], [field]: pair } };
+    });
+  }
+
+  function updateSingleValue(cat, field, rawValue) {
+    const limitsKey = `${cat}${field.charAt(0).toUpperCase()}${field.slice(1)}`;
+    const [lo, hi] = ABSOLUTE_LIMITS[limitsKey] || [1, 99];
+    const value = clamp(parseInt(rawValue, 10), lo, hi);
+    setDifficultyLabel("custom");
+    setRanges((r) => ({ ...r, [cat]: { ...r[cat], [field]: value } }));
+  }
+
   useEffect(() => {
     if (loaded) nextQuestion(stats);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, answerMode]);
+  }, [active, answerMode, ranges]);
 
   const accuracyPct = session.total > 0 ? Math.round((session.correct / session.total) * 100) : 0;
 
@@ -514,6 +602,102 @@ export default function BuddhiDrill() {
             })}
           </div>
         </div>
+
+        {/* DIFFICULTY + CUSTOM RANGE */}
+        <div style={styles.modeRow}>
+          <span style={styles.modeLabel}>Difficulty:</span>
+          <div style={styles.segmentGroup}>
+            {[
+              { id: "easy", label: "Easy" },
+              { id: "medium", label: "Medium" },
+              { id: "hard", label: "Hard" },
+            ].map((opt) => {
+              const on = difficultyLabel === opt.id;
+              return (
+                <button
+                  key={opt.id}
+                  onClick={() => applyDifficulty(opt.id)}
+                  style={{
+                    ...styles.segmentBtn,
+                    background: on ? "#E8B23D" : "transparent",
+                    color: on ? "#0B1929" : "#93A6B8",
+                    fontWeight: on ? 700 : 500,
+                  }}
+                >
+                  {opt.label}
+                </button>
+              );
+            })}
+            {difficultyLabel === "custom" && (
+              <span style={{ ...styles.segmentBtn, color: "#E8B23D", fontWeight: 700 }}>Custom</span>
+            )}
+          </div>
+          <button
+            onClick={() => setShowCustomize((s) => !s)}
+            style={{ ...styles.linkBtn, marginLeft: 4 }}
+          >
+            ⚙️ {showCustomize ? "Hide range settings" : "Set your own ranges"}
+          </button>
+        </div>
+
+        {showCustomize && (
+          <div style={styles.customizePanel}>
+            {active.tables && (
+              <RangeRow
+                label="Tables — table number"
+                value={ranges.tables.base}
+                onChange={(idx, v) => updateRangePair("tables", "base", idx, v)}
+                limits={ABSOLUTE_LIMITS.tablesBase}
+              />
+            )}
+            {active.tables && (
+              <RangeRow
+                label="Tables — multiplier (×1 to ×N)"
+                value={ranges.tables.mult}
+                onChange={(idx, v) => updateRangePair("tables", "mult", idx, v)}
+                limits={ABSOLUTE_LIMITS.tablesMult}
+              />
+            )}
+            {active.squares && (
+              <RangeRow
+                label="Squares — number range"
+                value={ranges.squares.n}
+                onChange={(idx, v) => updateRangePair("squares", "n", idx, v)}
+                limits={ABSOLUTE_LIMITS.squaresN}
+              />
+            )}
+            {active.cubes && (
+              <RangeRow
+                label="Cubes — number range"
+                value={ranges.cubes.n}
+                onChange={(idx, v) => updateRangePair("cubes", "n", idx, v)}
+                limits={ABSOLUTE_LIMITS.cubesN}
+              />
+            )}
+            {active.fractions && (
+              <div style={styles.rangeRow}>
+                <span style={styles.rangeLabel}>Fraction ↔ % — max denominator</span>
+                <input
+                  type="number"
+                  value={ranges.fractions.maxDen}
+                  onChange={(e) => updateSingleValue("fractions", "maxDen", e.target.value)}
+                  min={ABSOLUTE_LIMITS.fractionsMaxDen[0]}
+                  max={ABSOLUTE_LIMITS.fractionsMaxDen[1]}
+                  style={styles.rangeInput}
+                />
+              </div>
+            )}
+            {active.quickpct && (
+              <RangeRow
+                label="Quick % — base number multiplier"
+                value={ranges.quickpct.mult}
+                onChange={(idx, v) => updateRangePair("quickpct", "mult", idx, v)}
+                limits={ABSOLUTE_LIMITS.quickpctMult}
+              />
+            )}
+            <div style={styles.customizeHint}>Higher table/square/cube numbers and bigger multipliers = harder mental math.</div>
+          </div>
+        )}
 
         {/* QUESTION CARD */}
         <div style={styles.paperCard}>
@@ -697,6 +881,33 @@ function hexToRgb(hex) {
   };
 }
 
+function RangeRow({ label, value, onChange, limits }) {
+  return (
+    <div style={styles.rangeRow}>
+      <span style={styles.rangeLabel}>{label}</span>
+      <div style={styles.rangeInputs}>
+        <input
+          type="number"
+          value={value[0]}
+          min={limits[0]}
+          max={limits[1]}
+          onChange={(e) => onChange(0, e.target.value)}
+          style={styles.rangeInput}
+        />
+        <span style={styles.rangeDash}>–</span>
+        <input
+          type="number"
+          value={value[1]}
+          min={limits[0]}
+          max={limits[1]}
+          onChange={(e) => onChange(1, e.target.value)}
+          style={styles.rangeInput}
+        />
+      </div>
+    </div>
+  );
+}
+
 function Heatmap({ category, title, items, stats }) {
   return (
     <div style={styles.heatBlock}>
@@ -816,6 +1027,39 @@ const styles = {
     fontSize: 12.5,
     background: "transparent",
   },
+
+  customizePanel: {
+    background: "rgba(255,255,255,0.03)",
+    border: "1px solid #233448",
+    borderRadius: 12,
+    padding: "14px 16px",
+    marginBottom: 20,
+    display: "flex",
+    flexDirection: "column",
+    gap: 10,
+  },
+  rangeRow: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    flexWrap: "wrap",
+  },
+  rangeLabel: { fontSize: 13, color: "#C6D4E0" },
+  rangeInputs: { display: "flex", alignItems: "center", gap: 6 },
+  rangeInput: {
+    width: 60,
+    padding: "6px 8px",
+    borderRadius: 8,
+    border: "1.5px solid #3E566B",
+    background: "#0F2033",
+    color: "#F4EFE3",
+    fontFamily: "'JetBrains Mono', monospace",
+    fontSize: 13,
+    textAlign: "center",
+  },
+  rangeDash: { color: "#5E7590" },
+  customizeHint: { fontSize: 11.5, color: "#5E7590", marginTop: 4 },
 
   paperCard: {
     background: "#F4EFE3",
