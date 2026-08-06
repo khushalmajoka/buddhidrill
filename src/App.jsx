@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 
 /* ============================================================
    DATA
@@ -46,19 +46,6 @@ const ABSOLUTE_LIMITS = {
   fractionsMaxDen: [2, 25],
   quickpctMult: [2, 60],
 };
-
-function defaultRanges() {
-  return {
-    multiplication: { a: [2, 25], b: [2, 12] },
-    addition: { a: [1, 100], b: [1, 100] },
-    subtraction: { a: [10, 100], b: [1, 100] },
-    division: { divisor: [2, 25], quotient: [2, 25] },
-    squares: { n: [1, 25] },
-    cubes: { n: [1, 25] },
-    fractions: { maxDen: 25 },
-    quickpct: { mult: [2, 30] },
-  };
-}
 
 const DIFFICULTY_PRESETS = {
   easy: {
@@ -386,6 +373,7 @@ export default function BuddhiDrill() {
   const [showHeatmap, setShowHeatmap] = useState(true);
   const [weakMode, setWeakMode] = useState(false);
   const inputRef = useRef(null);
+  const autoFocusRef = useRef(false);
   const advanceTimerRef = useRef(null);
   const feedbackRef = useRef(null);
   const questionRef = useRef(null);
@@ -420,7 +408,7 @@ export default function BuddhiDrill() {
     try {
       const raw = window.localStorage.getItem(`buddhidrill-highscore-${gameDuration}`);
       setGameBest(raw ? parseInt(raw, 10) || 0 : 0);
-    } catch (e) { /* ignore */ }
+    } catch { /* ignore */ }
   }, [gameDuration]);
 
   useEffect(() => { feedbackRef.current = feedback; }, [feedback]);
@@ -432,7 +420,7 @@ export default function BuddhiDrill() {
     try {
       const raw = window.localStorage.getItem("buddhidrill-stats");
       if (raw) setStats({ ...emptyStats(), ...JSON.parse(raw) });
-    } catch (e) {
+    } catch {
       // no saved stats yet, or storage blocked — start fresh
     } finally {
       setLoaded(true);
@@ -442,7 +430,7 @@ export default function BuddhiDrill() {
   const persist = useCallback((next) => {
     try {
       window.localStorage.setItem("buddhidrill-stats", JSON.stringify(next));
-    } catch (e) {
+    } catch {
       // storage unavailable (e.g. private browsing) — session continues without persistence
     }
   }, []);
@@ -469,7 +457,7 @@ export default function BuddhiDrill() {
     return pool[pool.length - 1];
   }, [active, weakMode]);
 
-  const nextQuestion = useCallback((statsSnapshot) => {
+  const nextQuestion = useCallback((statsSnapshot, focusAfter) => {
     const cat = pickCategory(statsSnapshot);
     if (!cat) { setQuestion(null); return; }
     const forceType = answerMode === "mixed" ? undefined : answerMode;
@@ -489,21 +477,28 @@ export default function BuddhiDrill() {
     } else {
       q = GENERATORS[cat](forceType, ranges);
     }
+    autoFocusRef.current = !!focusAfter;
     setQuestion(q);
     setSelected(null);
     setFillValue("");
     setFeedback(null);
   }, [pickCategory, weakMode, answerMode, ranges]);
 
+  // initial question on load — no auto-focus, so the keyboard doesn't pop
+  // open the moment the page finishes loading on mobile
   useEffect(() => {
-    if (loaded && !question) nextQuestion(stats);
+    if (loaded && !question) nextQuestion(stats, false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loaded]);
 
+  // only steal focus into the answer box when the question changed because
+  // the user answered and moved on — never when a chip/setting change
+  // silently regenerated the question underneath them
   useEffect(() => {
-    if (question && question.type === "fill" && inputRef.current) {
+    if (question && question.type === "fill" && inputRef.current && autoFocusRef.current) {
       inputRef.current.focus();
     }
+    autoFocusRef.current = false;
   }, [question]);
 
   function submitAnswer(userAnswer) {
@@ -562,7 +557,7 @@ export default function BuddhiDrill() {
       clearTimeout(advanceTimerRef.current);
       advanceTimerRef.current = null;
     }
-    nextQuestion(stats);
+    nextQuestion(stats, true);
   }
 
   // global Enter handling: submits a typed fill-blank answer, or advances to the
@@ -644,7 +639,7 @@ export default function BuddhiDrill() {
     setGameTally((tally) => {
       if (tally.correct > gameBest) {
         setGameBest(tally.correct);
-        try { window.localStorage.setItem(`buddhidrill-highscore-${gameDuration}`, String(tally.correct)); } catch (e) { /* ignore */ }
+        try { window.localStorage.setItem(`buddhidrill-highscore-${gameDuration}`, String(tally.correct)); } catch { /* ignore */ }
       }
       return tally;
     });
@@ -763,8 +758,11 @@ export default function BuddhiDrill() {
     setRanges((r) => ({ ...r, [cat]: { ...r[cat], [field]: value } }));
   }
 
+  // regenerate the question when settings change (category toggle, difficulty,
+  // custom ranges, answer mode) — never auto-focus here, this isn't the user
+  // asking to move to the next question, just a settings tweak
   useEffect(() => {
-    if (loaded) nextQuestion(stats);
+    if (loaded) nextQuestion(stats, false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, answerMode, ranges]);
 
@@ -777,10 +775,10 @@ export default function BuddhiDrill() {
       <div style={styles.wrap} className="bd-wrap">
         {/* ADMIT-CARD HEADER */}
         <header style={styles.header} className="bd-header">
-          <div style={styles.headerLeft}>
-            <div style={styles.eyebrow}>BUDDHIDRILL · MENTAL MATH &amp; REASONING DRILLS</div>
+          <div style={styles.headerLeft} className="bd-header-left">
+            <div style={styles.eyebrow}>BUDDHIDRILL · BRAIN GAMES</div>
             <h1 style={styles.title}>BuddhiDrill</h1>
-            <div style={styles.subtitle}>+ − × ÷ · Squares · Cubes · Fraction–% · Quick % — built for govt exam quant &amp; reasoning</div>
+            <div style={styles.subtitle}>A playful daily workout for your math &amp; memory</div>
           </div>
           <div style={styles.stampBox} className="bd-stamp">
             <div style={styles.stampRow}>
@@ -1252,7 +1250,7 @@ export default function BuddhiDrill() {
           </div>
         </div>
 
-        <footer style={styles.footer}>BuddhiDrill — daily mental math &amp; reasoning drills for govt exam prep. Accuracy is tracked per number and saved on this device.</footer>
+        <footer style={styles.footer}>BuddhiDrill — a playful daily workout for your math &amp; memory. Accuracy is tracked per number and saved on this device.</footer>
       </div>
     </div>
   );
@@ -1525,6 +1523,9 @@ const GLOBAL_CSS = `
       flex-direction: column !important;
       align-items: stretch !important;
       gap: 14px !important;
+    }
+    .bd-header-left {
+      flex: none !important;
     }
     .bd-stamp {
       min-width: 0 !important;
