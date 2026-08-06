@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 
 /* ============================================================
    DATA
@@ -25,11 +25,14 @@ const CATEGORY_META = {
   cubes: { label: "Cubes", short: "n³", ink: "#4B3D8A" },
   fractions: { label: "Fraction ↔ %", short: "%", ink: "#8A2B4B" },
   quickpct: { label: "Quick %", short: "%of", ink: "#8A2B6B" },
+  alphaValue: { label: "Alphabet ↔ Number", short: "A1", ink: "#4B8A2B" },
+  alphaOpposite: { label: "Opposite Letters", short: "A↔Z", ink: "#2B8A8A" },
 };
 
 const CATEGORY_ORDER = [
   "multiplication", "addition", "subtraction", "division",
   "squares", "cubes", "fractions", "quickpct",
+  "alphaValue", "alphaOpposite",
 ];
 
 const ABSOLUTE_LIMITS = {
@@ -45,6 +48,8 @@ const ABSOLUTE_LIMITS = {
   cubesN: [1, 25],
   fractionsMaxDen: [2, 25],
   quickpctMult: [2, 60],
+  alphaValuePos: [1, 26],
+  alphaOppositePos: [1, 26],
 };
 
 const DIFFICULTY_PRESETS = {
@@ -57,6 +62,8 @@ const DIFFICULTY_PRESETS = {
     cubes: { n: [1, 10] },
     fractions: { maxDen: 10 },
     quickpct: { mult: [2, 10] },
+    alphaValue: { pos: [1, 13] },
+    alphaOpposite: { pos: [1, 13] },
   },
   medium: {
     multiplication: { a: [2, 20], b: [2, 10] },
@@ -67,6 +74,8 @@ const DIFFICULTY_PRESETS = {
     cubes: { n: [1, 15] },
     fractions: { maxDen: 20 },
     quickpct: { mult: [2, 20] },
+    alphaValue: { pos: [1, 20] },
+    alphaOpposite: { pos: [1, 20] },
   },
   hard: {
     multiplication: { a: [11, 25], b: [6, 12] },
@@ -77,6 +86,8 @@ const DIFFICULTY_PRESETS = {
     cubes: { n: [12, 25] },
     fractions: { maxDen: 25 },
     quickpct: { mult: [15, 40] },
+    alphaValue: { pos: [1, 26] },
+    alphaOpposite: { pos: [1, 26] },
   },
 };
 
@@ -304,6 +315,75 @@ function genQuickPct(forceType, ranges) {
   return { category: "quickpct", key, keyLabel: `${label}%`, prompt, answer, type: "fill" };
 }
 
+function letterAt(pos) { return String.fromCharCode(64 + pos); }
+
+function letterDistractors(correctLetter, count, near) {
+  const correctPos = correctLetter.charCodeAt(0) - 64;
+  const set = new Set([correctLetter]);
+  let guard = 0;
+  while (set.size < count + 1 && guard < 200) {
+    guard++;
+    const delta = randInt(-near, near);
+    const cand = correctPos + (delta === 0 ? near : delta);
+    if (cand >= 1 && cand <= 26) {
+      const L = letterAt(cand);
+      if (!set.has(L)) set.add(L);
+    }
+  }
+  return [...set].filter((l) => l !== correctLetter);
+}
+
+// A=1, B=2 ... Z=26, quizzed in both directions
+function genAlphaValue(forceType, ranges) {
+  const r = ranges.alphaValue;
+  const pos = randInt(r.pos[0], r.pos[1]);
+  const letter = letterAt(pos);
+  const key = letter;
+  const directionA = Math.random() < 0.5; // letter -> number
+  const asMcq = forceType ? forceType === "mcq" : Math.random() < 0.55;
+
+  if (directionA) {
+    const prompt = `${letter} = ?`;
+    const answer = pos;
+    if (asMcq) {
+      const options = shuffle([answer, ...numDistractors(answer, 5)]);
+      return { category: "alphaValue", key, keyLabel: letter, prompt, answer, type: "mcq", options };
+    }
+    return { category: "alphaValue", key, keyLabel: letter, prompt, answer, type: "fill" };
+  }
+
+  const prompt = `${pos} = ?`;
+  const answer = letter;
+  if (asMcq) {
+    const options = shuffle([answer, ...letterDistractors(letter, 3, 6)]);
+    return { category: "alphaValue", key, keyLabel: letter, prompt, answer, type: "mcq", options };
+  }
+  return {
+    category: "alphaValue", key, keyLabel: letter, prompt, answer,
+    type: "fill", answerIsText: true, inputMode: "text", placeholder: "e.g. G",
+  };
+}
+
+// mirror pairs: A<->Z, B<->Y, C<->X ... — picking any letter naturally
+// covers both "near the start" and "near the end" prompts
+function genAlphaOpposite(forceType, ranges) {
+  const r = ranges.alphaOpposite;
+  const pos = randInt(r.pos[0], r.pos[1]);
+  const letter = letterAt(pos);
+  const oppLetter = letterAt(27 - pos);
+  const key = letter;
+  const asMcq = forceType ? forceType === "mcq" : Math.random() < 0.55;
+  const prompt = `Opposite of ${letter} = ?`;
+  if (asMcq) {
+    const options = shuffle([oppLetter, ...letterDistractors(oppLetter, 3, 4)]);
+    return { category: "alphaOpposite", key, keyLabel: letter, prompt, answer: oppLetter, type: "mcq", options };
+  }
+  return {
+    category: "alphaOpposite", key, keyLabel: letter, prompt, answer: oppLetter,
+    type: "fill", answerIsText: true, inputMode: "text", placeholder: "e.g. Z",
+  };
+}
+
 const GENERATORS = {
   multiplication: genMultiplication,
   addition: genAddition,
@@ -313,6 +393,8 @@ const GENERATORS = {
   cubes: genCubes,
   fractions: genFractions,
   quickpct: genQuickPct,
+  alphaValue: genAlphaValue,
+  alphaOpposite: genAlphaOpposite,
 };
 
 /* ============================================================
@@ -323,15 +405,18 @@ function emptyStats() {
   return {
     multiplication: {}, addition: {}, subtraction: {}, division: {},
     squares: {}, cubes: {}, fractions: {}, quickpct: {},
+    alphaValue: {}, alphaOpposite: {},
   };
 }
 
-function recordAnswer(stats, category, key, correct) {
+function recordAnswer(stats, category, key, correct, timeMs) {
   const next = { ...stats, [category]: { ...stats[category] } };
-  const cur = next[category][key] || { correct: 0, total: 0 };
+  const cur = next[category][key] || { correct: 0, total: 0, totalTimeMs: 0 };
+  const clampedTime = Number.isFinite(timeMs) ? Math.max(0, Math.min(timeMs, 120000)) : 0;
   next[category][key] = {
     correct: cur.correct + (correct ? 1 : 0),
     total: cur.total + 1,
+    totalTimeMs: (cur.totalTimeMs || 0) + clampedTime,
   };
   return next;
 }
@@ -341,13 +426,41 @@ function accuracyOf(entry) {
   return entry.correct / entry.total;
 }
 
+function avgTimeOf(entry) {
+  if (!entry || entry.total === 0 || !entry.totalTimeMs) return null;
+  return entry.totalTimeMs / entry.total;
+}
+
+// average response time across every attempted item in a category — used as
+// the "normal pace" baseline that individual items are compared against
+function categoryAvgTimeMs(stats, category) {
+  const entries = Object.values(stats[category] || {});
+  let sumTime = 0, sumTotal = 0;
+  for (const e of entries) {
+    if (e.total > 0 && e.totalTimeMs) { sumTime += e.totalTimeMs; sumTotal += e.total; }
+  }
+  return sumTotal > 0 ? sumTime / sumTotal : null;
+}
+
 function weightForItem(stats, category, key) {
   const entry = stats[category] && stats[category][key];
   if (!entry || entry.total === 0) return 3; // unseen items get modest priority
   const acc = entry.correct / entry.total;
   // weaker items (low acc, more attempts) get higher weight
   const base = 1 - acc;
-  return 0.5 + base * 4 + Math.min(entry.total, 5) * 0.15;
+  let weight = 0.5 + base * 4 + Math.min(entry.total, 5) * 0.15;
+
+  // items that consistently take longer than your usual pace for this
+  // category are "slow but maybe getting there" — nudge them up too,
+  // even if you're technically still getting them right
+  const itemAvg = avgTimeOf(entry);
+  const catAvg = categoryAvgTimeMs(stats, category);
+  if (itemAvg && catAvg && catAvg > 0) {
+    const slownessRatio = itemAvg / catAvg; // >1 means slower than your average for this category
+    const slownessBonus = Math.max(0, Math.min(2, slownessRatio - 1));
+    weight += slownessBonus * 1.5;
+  }
+  return weight;
 }
 
 /* ============================================================
@@ -360,6 +473,7 @@ export default function BuddhiDrill() {
   const [active, setActive] = useState({
     multiplication: true, addition: true, subtraction: true, division: true,
     squares: true, cubes: true, fractions: true, quickpct: true,
+    alphaValue: true, alphaOpposite: true,
   });
   const [answerMode, setAnswerMode] = useState("mixed"); // 'mixed' | 'mcq' | 'fill'
   const [ranges, setRanges] = useState(DIFFICULTY_PRESETS.medium);
@@ -378,11 +492,13 @@ export default function BuddhiDrill() {
   const feedbackRef = useRef(null);
   const questionRef = useRef(null);
   const fillValueRef = useRef("");
+  const questionStartRef = useRef(null);
 
   // ---- Game mode state ----
   const [appMode, setAppMode] = useState("practice"); // 'practice' | 'game'
   const [gameCats, setGameCats] = useState({
     multiplication: true, addition: true, subtraction: true, division: true, squares: true, cubes: true,
+    alphaValue: true, alphaOpposite: true,
   });
   const [gameDuration, setGameDuration] = useState(60);
   const [gameStatus, setGameStatus] = useState("setup"); // 'setup' | 'playing' | 'finished'
@@ -396,6 +512,7 @@ export default function BuddhiDrill() {
   const gameTimerRef = useRef(null);
   const gameAdvanceRef = useRef(null);
   const gameInputRef = useRef(null);
+  const gameQuestionStartRef = useRef(null);
   const gameFeedbackRef = useRef(null);
   const gameQuestionRef = useRef(null);
   const gameFillValueRef = useRef("");
@@ -478,6 +595,7 @@ export default function BuddhiDrill() {
       q = GENERATORS[cat](forceType, ranges);
     }
     autoFocusRef.current = !!focusAfter;
+    questionStartRef.current = Date.now();
     setQuestion(q);
     setSelected(null);
     setFillValue("");
@@ -522,7 +640,8 @@ export default function BuddhiDrill() {
       }
     }
     setFeedback(correct ? "correct" : "wrong");
-    const nextStats = recordAnswer(stats, question.category, question.key, correct);
+    const elapsedMs = questionStartRef.current ? Date.now() - questionStartRef.current : 0;
+    const nextStats = recordAnswer(stats, question.category, question.key, correct, elapsedMs);
     setStats(nextStats);
     persist(nextStats);
     setSession((s) => {
@@ -588,7 +707,7 @@ export default function BuddhiDrill() {
      GAME MODE — fast-paced timed challenge across chosen categories
      ============================================================ */
 
-  const GAME_CATEGORY_ORDER = ["multiplication", "addition", "subtraction", "division", "squares", "cubes"];
+  const GAME_CATEGORY_ORDER = ["multiplication", "addition", "subtraction", "division", "squares", "cubes", "alphaValue", "alphaOpposite"];
 
   function toggleGameCat(cat) {
     setGameCats((c) => {
@@ -607,6 +726,7 @@ export default function BuddhiDrill() {
     const cat = pickGameCategory();
     const forceType = answerMode === "mixed" ? undefined : answerMode;
     const q = GENERATORS[cat](forceType, ranges);
+    gameQuestionStartRef.current = Date.now();
     setGameQuestion(q);
     setGameSelected(null);
     setGameFillValue("");
@@ -654,12 +774,22 @@ export default function BuddhiDrill() {
       setGameSelected(userAnswer);
     } else {
       const raw = String(userAnswer).trim();
-      const num = Number(raw);
-      correct = !Number.isNaN(num) && num === q.answer;
+      if (q.answerIsText) {
+        const norm = (s) => s.replace(/\s+/g, "").toLowerCase();
+        correct = norm(raw) === norm(String(q.answer));
+      } else {
+        const num = Number(raw);
+        if (q.tolerance !== undefined) {
+          correct = !Number.isNaN(num) && Math.abs(num - parseFloat(q.answer)) <= q.tolerance;
+        } else {
+          correct = !Number.isNaN(num) && num === q.answer;
+        }
+      }
     }
     setGameFeedback(correct ? "correct" : "wrong");
 
-    const nextStats = recordAnswer(stats, q.category, q.key, correct);
+    const elapsedMs = gameQuestionStartRef.current ? Date.now() - gameQuestionStartRef.current : 0;
+    const nextStats = recordAnswer(stats, q.category, q.key, correct, elapsedMs);
     setStats(nextStats);
     persist(nextStats);
 
@@ -855,7 +985,7 @@ export default function BuddhiDrill() {
               background: weakMode ? "#E8B23D" : "transparent",
               fontWeight: 700,
             }}
-            title="Bias questions toward your weakest numbers"
+            title="Bias questions toward the numbers you get wrong most, or answer slowest"
           >
             🎯 Focus weak spots {weakMode ? "ON" : "OFF"}
           </button>
@@ -1027,6 +1157,22 @@ export default function BuddhiDrill() {
                 value={ranges.quickpct.mult}
                 onChange={(idx, v) => updateRangePair("quickpct", "mult", idx, v)}
                 limits={ABSOLUTE_LIMITS.quickpctMult}
+              />
+            )}
+            {active.alphaValue && (
+              <RangeRow
+                label="Alphabet ↔ Number — letter range (A=1 … Z=26)"
+                value={ranges.alphaValue.pos}
+                onChange={(idx, v) => updateRangePair("alphaValue", "pos", idx, v)}
+                limits={ABSOLUTE_LIMITS.alphaValuePos}
+              />
+            )}
+            {active.alphaOpposite && (
+              <RangeRow
+                label="Opposite Letters — letter range"
+                value={ranges.alphaOpposite.pos}
+                onChange={(idx, v) => updateRangePair("alphaOpposite", "pos", idx, v)}
+                limits={ABSOLUTE_LIMITS.alphaOppositePos}
               />
             )}
             <div style={styles.customizeHint}>Bigger numbers and wider ranges = harder mental math. Changing any value switches Difficulty to "Custom".</div>
@@ -1224,6 +1370,22 @@ export default function BuddhiDrill() {
                   stats={stats}
                 />
               )}
+              {active.alphaValue && (
+                <Heatmap
+                  category="alphaValue"
+                  title={`Alphabet ↔ Number (${letterAt(ranges.alphaValue.pos[0])}–${letterAt(ranges.alphaValue.pos[1])})`}
+                  items={range(ranges.alphaValue.pos[0], ranges.alphaValue.pos[1]).map(letterAt)}
+                  stats={stats}
+                />
+              )}
+              {active.alphaOpposite && (
+                <Heatmap
+                  category="alphaOpposite"
+                  title={`Opposite Letters (${letterAt(ranges.alphaOpposite.pos[0])}–${letterAt(ranges.alphaOpposite.pos[1])})`}
+                  items={range(ranges.alphaOpposite.pos[0], ranges.alphaOpposite.pos[1]).map(letterAt)}
+                  stats={stats}
+                />
+              )}
 
               <div style={styles.legendRow}>
                 <span style={styles.legendLabel}>Legend:</span>
@@ -1244,7 +1406,7 @@ export default function BuddhiDrill() {
         <div style={styles.comingSoonBox}>
           <div style={styles.comingSoonTitle}>🚧 More drills coming to BuddhiDrill</div>
           <div style={styles.comingSoonChips}>
-            {["Place Value", "Number Series", "Reversal Pairs", "Alphabet Coding", "Blood Relations", "Direction Sense"].map((t) => (
+            {["Number Series", "Blood Relations", "Direction Sense", "Coding-Decoding"].map((t) => (
               <span key={t} style={styles.comingSoonChip}>{t}</span>
             ))}
           </div>
@@ -1299,7 +1461,7 @@ function GamePanel({
   gameQuestion, gameSelected, gameFillValue, setGameFillValue, gameFeedback, gameTally,
   gameBest, startGame, submitGameAnswer, handleGameFillSubmit, gameInputRef, setGameStatus,
 }) {
-  const GAME_CATS = ["multiplication", "addition", "subtraction", "division", "squares", "cubes"];
+  const GAME_CATS = ["multiplication", "addition", "subtraction", "division", "squares", "cubes", "alphaValue", "alphaOpposite"];
   const accuracy = gameTally.correct + gameTally.wrong > 0
     ? Math.round((gameTally.correct / (gameTally.correct + gameTally.wrong)) * 100)
     : 0;
@@ -1398,11 +1560,11 @@ function GamePanel({
               <input
                 ref={gameInputRef}
                 type="text"
-                inputMode="decimal"
+                inputMode={gameQuestion.inputMode === "text" ? "text" : "decimal"}
                 value={gameFillValue}
                 disabled={!!gameFeedback}
                 onChange={(e) => setGameFillValue(e.target.value)}
-                placeholder="type your answer"
+                placeholder={gameQuestion.placeholder || "type your answer"}
                 className="bd-fill-input"
                 style={{
                   ...styles.fillInput,
