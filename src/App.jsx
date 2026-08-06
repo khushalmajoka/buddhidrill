@@ -17,18 +17,30 @@ const QUICK_PCT = [
 ];
 
 const CATEGORY_META = {
-  tables: { label: "Tables", short: "×", ink: "#1F6F5C" },
+  multiplication: { label: "Multiplication", short: "×", ink: "#1F6F5C" },
+  addition: { label: "Addition", short: "+", ink: "#2E8B57" },
+  subtraction: { label: "Subtraction", short: "−", ink: "#B2662B" },
+  division: { label: "Division", short: "÷", ink: "#2B5A8A" },
   squares: { label: "Squares", short: "n²", ink: "#8A4B2B" },
-  cubes: { label: "Cubes", short: "n³", ink: "#5B4B8A" },
+  cubes: { label: "Cubes", short: "n³", ink: "#4B3D8A" },
   fractions: { label: "Fraction ↔ %", short: "%", ink: "#8A2B4B" },
-  quickpct: { label: "Quick %", short: "%of", ink: "#2B5A8A" },
+  quickpct: { label: "Quick %", short: "%of", ink: "#8A2B6B" },
 };
 
-const CATEGORY_ORDER = ["tables", "squares", "cubes", "fractions", "quickpct"];
+const CATEGORY_ORDER = [
+  "multiplication", "addition", "subtraction", "division",
+  "squares", "cubes", "fractions", "quickpct",
+];
 
 const ABSOLUTE_LIMITS = {
-  tablesBase: [2, 25],
-  tablesMult: [1, 20],
+  multiplicationA: [2, 25],
+  multiplicationB: [1, 20],
+  additionA: [1, 999],
+  additionB: [1, 999],
+  subtractionA: [1, 999],
+  subtractionB: [1, 999],
+  divisionDivisor: [2, 25],
+  divisionQuotient: [2, 25],
   squaresN: [1, 25],
   cubesN: [1, 25],
   fractionsMaxDen: [2, 25],
@@ -37,7 +49,10 @@ const ABSOLUTE_LIMITS = {
 
 function defaultRanges() {
   return {
-    tables: { base: [2, 25], mult: [2, 12] },
+    multiplication: { a: [2, 25], b: [2, 12] },
+    addition: { a: [1, 100], b: [1, 100] },
+    subtraction: { a: [10, 100], b: [1, 100] },
+    division: { divisor: [2, 25], quotient: [2, 25] },
     squares: { n: [1, 25] },
     cubes: { n: [1, 25] },
     fractions: { maxDen: 25 },
@@ -47,21 +62,30 @@ function defaultRanges() {
 
 const DIFFICULTY_PRESETS = {
   easy: {
-    tables: { base: [2, 10], mult: [2, 5] },
+    multiplication: { a: [2, 10], b: [2, 5] },
+    addition: { a: [1, 20], b: [1, 20] },
+    subtraction: { a: [5, 20], b: [1, 20] },
+    division: { divisor: [2, 10], quotient: [2, 10] },
     squares: { n: [1, 10] },
     cubes: { n: [1, 10] },
     fractions: { maxDen: 10 },
     quickpct: { mult: [2, 10] },
   },
   medium: {
-    tables: { base: [2, 20], mult: [2, 10] },
+    multiplication: { a: [2, 20], b: [2, 10] },
+    addition: { a: [1, 100], b: [1, 100] },
+    subtraction: { a: [10, 100], b: [1, 100] },
+    division: { divisor: [2, 20], quotient: [2, 20] },
     squares: { n: [1, 20] },
     cubes: { n: [1, 15] },
     fractions: { maxDen: 20 },
     quickpct: { mult: [2, 20] },
   },
   hard: {
-    tables: { base: [11, 25], mult: [6, 12] },
+    multiplication: { a: [11, 25], b: [6, 12] },
+    addition: { a: [100, 999], b: [100, 999] },
+    subtraction: { a: [100, 999], b: [1, 999] },
+    division: { divisor: [11, 25], quotient: [11, 25] },
     squares: { n: [15, 25] },
     cubes: { n: [12, 25] },
     fractions: { maxDen: 25 },
@@ -82,6 +106,28 @@ function pctLabel(num, den) {
 }
 function randInt(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
 function pick(arr) { return arr[randInt(0, arr.length - 1)]; }
+
+// groups a wide numeric range into ~10 buckets so heatmaps stay readable
+// even when the user opens the range up to e.g. 100-999
+function bucketForRange(n, lo, hi) {
+  const span = Math.max(1, hi - lo + 1);
+  const bucketSize = Math.max(1, Math.ceil(span / 10));
+  if (bucketSize === 1) return String(n);
+  const idx = Math.floor((n - lo) / bucketSize);
+  const start = lo + idx * bucketSize;
+  const end = Math.min(hi, start + bucketSize - 1);
+  return `${start}-${end}`;
+}
+function bucketItemsForRange(lo, hi) {
+  const span = Math.max(1, hi - lo + 1);
+  const bucketSize = Math.max(1, Math.ceil(span / 10));
+  const items = [];
+  for (let start = lo; start <= hi; start += bucketSize) {
+    const end = Math.min(hi, start + bucketSize - 1);
+    items.push(bucketSize === 1 ? String(start) : `${start}-${end}`);
+  }
+  return items;
+}
 function shuffle(arr) {
   const a = [...arr];
   for (let i = a.length - 1; i > 0; i--) {
@@ -107,18 +153,67 @@ function numDistractors(answer, spread, count = 3) {
    returns { category, key, keyLabel, prompt, answer, type, options?, checkFillBlank }
    ============================================================ */
 
-function genTables(forceType, ranges) {
-  const r = ranges.tables;
-  const base = randInt(r.base[0], r.base[1]);
-  const mult = randInt(r.mult[0], r.mult[1]);
-  const answer = base * mult;
+function genMultiplication(forceType, ranges) {
+  const r = ranges.multiplication;
+  const a = randInt(r.a[0], r.a[1]);
+  const b = randInt(r.b[0], r.b[1]);
+  const answer = a * b;
   const asMcq = forceType ? forceType === "mcq" : Math.random() < 0.5;
-  const prompt = `${base} × ${mult} = ?`;
+  const prompt = `${a} × ${b} = ?`;
   if (asMcq) {
-    const options = shuffle([answer, ...numDistractors(answer, Math.max(6, base))]);
-    return { category: "tables", key: base, keyLabel: base, prompt, answer, type: "mcq", options };
+    const options = shuffle([answer, ...numDistractors(answer, Math.max(6, a))]);
+    return { category: "multiplication", key: a, keyLabel: a, prompt, answer, type: "mcq", options };
   }
-  return { category: "tables", key: base, keyLabel: base, prompt, answer, type: "fill" };
+  return { category: "multiplication", key: a, keyLabel: a, prompt, answer, type: "fill" };
+}
+
+function genAddition(forceType, ranges) {
+  const r = ranges.addition;
+  const a = randInt(r.a[0], r.a[1]);
+  const b = randInt(r.b[0], r.b[1]);
+  const answer = a + b;
+  const key = bucketForRange(a, r.a[0], r.a[1]);
+  const asMcq = forceType ? forceType === "mcq" : Math.random() < 0.5;
+  const prompt = `${a} + ${b} = ?`;
+  const spread = Math.max(5, Math.round(answer * 0.15));
+  if (asMcq) {
+    const options = shuffle([answer, ...numDistractors(answer, spread)]);
+    return { category: "addition", key, keyLabel: key, prompt, answer, type: "mcq", options };
+  }
+  return { category: "addition", key, keyLabel: key, prompt, answer, type: "fill" };
+}
+
+function genSubtraction(forceType, ranges) {
+  const r = ranges.subtraction;
+  const x = randInt(r.a[0], r.a[1]);
+  const y = randInt(r.b[0], r.b[1]);
+  const big = Math.max(x, y);
+  const small = Math.min(x, y);
+  const answer = big - small;
+  const key = bucketForRange(big, Math.min(r.a[0], r.b[0]), Math.max(r.a[1], r.b[1]));
+  const asMcq = forceType ? forceType === "mcq" : Math.random() < 0.5;
+  const prompt = `${big} − ${small} = ?`;
+  const spread = Math.max(5, Math.round((answer || 1) * 0.2) + 3);
+  if (asMcq) {
+    const options = shuffle([answer, ...numDistractors(answer, spread)]);
+    return { category: "subtraction", key, keyLabel: key, prompt, answer, type: "mcq", options };
+  }
+  return { category: "subtraction", key, keyLabel: key, prompt, answer, type: "fill" };
+}
+
+function genDivision(forceType, ranges) {
+  const r = ranges.division;
+  const divisor = randInt(r.divisor[0], r.divisor[1]);
+  const quotient = randInt(r.quotient[0], r.quotient[1]);
+  const dividend = divisor * quotient;
+  const answer = quotient;
+  const asMcq = forceType ? forceType === "mcq" : Math.random() < 0.5;
+  const prompt = `${dividend} ÷ ${divisor} = ?`;
+  if (asMcq) {
+    const options = shuffle([answer, ...numDistractors(answer, Math.max(4, Math.round(answer * 0.3)))]);
+    return { category: "division", key: divisor, keyLabel: divisor, prompt, answer, type: "mcq", options };
+  }
+  return { category: "division", key: divisor, keyLabel: divisor, prompt, answer, type: "fill" };
 }
 
 function genSquares(forceType, ranges) {
@@ -223,7 +318,10 @@ function genQuickPct(forceType, ranges) {
 }
 
 const GENERATORS = {
-  tables: genTables,
+  multiplication: genMultiplication,
+  addition: genAddition,
+  subtraction: genSubtraction,
+  division: genDivision,
   squares: genSquares,
   cubes: genCubes,
   fractions: genFractions,
@@ -235,7 +333,10 @@ const GENERATORS = {
    ============================================================ */
 
 function emptyStats() {
-  return { tables: {}, squares: {}, cubes: {}, fractions: {}, quickpct: {} };
+  return {
+    multiplication: {}, addition: {}, subtraction: {}, division: {},
+    squares: {}, cubes: {}, fractions: {}, quickpct: {},
+  };
 }
 
 function recordAnswer(stats, category, key, correct) {
@@ -270,7 +371,8 @@ export default function BuddhiDrill() {
   const [loaded, setLoaded] = useState(false);
   const [stats, setStats] = useState(emptyStats());
   const [active, setActive] = useState({
-    tables: true, squares: true, cubes: true, fractions: true, quickpct: true,
+    multiplication: true, addition: true, subtraction: true, division: true,
+    squares: true, cubes: true, fractions: true, quickpct: true,
   });
   const [answerMode, setAnswerMode] = useState("mixed"); // 'mixed' | 'mcq' | 'fill'
   const [ranges, setRanges] = useState(DIFFICULTY_PRESETS.medium);
@@ -288,6 +390,38 @@ export default function BuddhiDrill() {
   const feedbackRef = useRef(null);
   const questionRef = useRef(null);
   const fillValueRef = useRef("");
+
+  // ---- Game mode state ----
+  const [appMode, setAppMode] = useState("practice"); // 'practice' | 'game'
+  const [gameCats, setGameCats] = useState({
+    multiplication: true, addition: true, subtraction: true, division: true, squares: true, cubes: true,
+  });
+  const [gameDuration, setGameDuration] = useState(60);
+  const [gameStatus, setGameStatus] = useState("setup"); // 'setup' | 'playing' | 'finished'
+  const [gameTimeLeft, setGameTimeLeft] = useState(60);
+  const [gameQuestion, setGameQuestion] = useState(null);
+  const [gameSelected, setGameSelected] = useState(null);
+  const [gameFillValue, setGameFillValue] = useState("");
+  const [gameFeedback, setGameFeedback] = useState(null);
+  const [gameTally, setGameTally] = useState({ correct: 0, wrong: 0, byCat: {} });
+  const [gameBest, setGameBest] = useState(0);
+  const gameTimerRef = useRef(null);
+  const gameAdvanceRef = useRef(null);
+  const gameInputRef = useRef(null);
+  const gameFeedbackRef = useRef(null);
+  const gameQuestionRef = useRef(null);
+  const gameFillValueRef = useRef("");
+
+  useEffect(() => { gameFeedbackRef.current = gameFeedback; }, [gameFeedback]);
+  useEffect(() => { gameQuestionRef.current = gameQuestion; }, [gameQuestion]);
+  useEffect(() => { gameFillValueRef.current = gameFillValue; }, [gameFillValue]);
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(`buddhidrill-highscore-${gameDuration}`);
+      setGameBest(raw ? parseInt(raw, 10) || 0 : 0);
+    } catch (e) { /* ignore */ }
+  }, [gameDuration]);
 
   useEffect(() => { feedbackRef.current = feedback; }, [feedback]);
   useEffect(() => { questionRef.current = question; }, [question]);
@@ -432,9 +566,10 @@ export default function BuddhiDrill() {
   }
 
   // global Enter handling: submits a typed fill-blank answer, or advances to the
-  // next question once feedback (correct/wrong) is showing
+  // next question once feedback (correct/wrong) is showing (practice mode only)
   useEffect(() => {
     function onKeyDown(e) {
+      if (appMode !== "practice") return;
       if (e.key !== "Enter") return;
       const q = questionRef.current;
       if (!q) return;
@@ -452,6 +587,130 @@ export default function BuddhiDrill() {
 
   useEffect(() => () => {
     if (advanceTimerRef.current) clearTimeout(advanceTimerRef.current);
+  }, []);
+
+  /* ============================================================
+     GAME MODE — fast-paced timed challenge across chosen categories
+     ============================================================ */
+
+  const GAME_CATEGORY_ORDER = ["multiplication", "addition", "subtraction", "division", "squares", "cubes"];
+
+  function toggleGameCat(cat) {
+    setGameCats((c) => {
+      const next = { ...c, [cat]: !c[cat] };
+      if (!Object.values(next).some(Boolean)) return c; // keep at least one on
+      return next;
+    });
+  }
+
+  function pickGameCategory() {
+    const pool = GAME_CATEGORY_ORDER.filter((c) => gameCats[c]);
+    return pool.length ? pick(pool) : "multiplication";
+  }
+
+  function nextGameQuestion() {
+    const cat = pickGameCategory();
+    const forceType = answerMode === "mixed" ? undefined : answerMode;
+    const q = GENERATORS[cat](forceType, ranges);
+    setGameQuestion(q);
+    setGameSelected(null);
+    setGameFillValue("");
+    setGameFeedback(null);
+  }
+
+  function startGame() {
+    setGameStatus("playing");
+    setGameTimeLeft(gameDuration);
+    setGameTally({ correct: 0, wrong: 0, byCat: {} });
+    nextGameQuestion();
+    if (gameTimerRef.current) clearInterval(gameTimerRef.current);
+    gameTimerRef.current = setInterval(() => {
+      setGameTimeLeft((t) => {
+        if (t <= 1) {
+          clearInterval(gameTimerRef.current);
+          gameTimerRef.current = null;
+          endGame();
+          return 0;
+        }
+        return t - 1;
+      });
+    }, 1000);
+  }
+
+  function endGame() {
+    if (gameTimerRef.current) { clearInterval(gameTimerRef.current); gameTimerRef.current = null; }
+    if (gameAdvanceRef.current) { clearTimeout(gameAdvanceRef.current); gameAdvanceRef.current = null; }
+    setGameStatus("finished");
+    setGameTally((tally) => {
+      if (tally.correct > gameBest) {
+        setGameBest(tally.correct);
+        try { window.localStorage.setItem(`buddhidrill-highscore-${gameDuration}`, String(tally.correct)); } catch (e) { /* ignore */ }
+      }
+      return tally;
+    });
+  }
+
+  function submitGameAnswer(userAnswer) {
+    const q = gameQuestion;
+    if (!q || gameFeedback || gameStatus !== "playing") return;
+    let correct;
+    if (q.type === "mcq") {
+      correct = String(userAnswer) === String(q.answer);
+      setGameSelected(userAnswer);
+    } else {
+      const raw = String(userAnswer).trim();
+      const num = Number(raw);
+      correct = !Number.isNaN(num) && num === q.answer;
+    }
+    setGameFeedback(correct ? "correct" : "wrong");
+
+    const nextStats = recordAnswer(stats, q.category, q.key, correct);
+    setStats(nextStats);
+    persist(nextStats);
+
+    setGameTally((t) => {
+      const byCat = { ...t.byCat };
+      const c = byCat[q.category] || { correct: 0, total: 0 };
+      byCat[q.category] = { correct: c.correct + (correct ? 1 : 0), total: c.total + 1 };
+      return { correct: t.correct + (correct ? 1 : 0), wrong: t.wrong + (correct ? 0 : 1), byCat };
+    });
+
+    if (gameAdvanceRef.current) clearTimeout(gameAdvanceRef.current);
+    gameAdvanceRef.current = setTimeout(() => {
+      gameAdvanceRef.current = null;
+      if (gameStatus === "playing") nextGameQuestion();
+    }, correct ? 450 : 900);
+  }
+
+  function handleGameFillSubmit(e) {
+    if (e && e.preventDefault) e.preventDefault();
+    if (gameFeedbackRef.current) return;
+    if (gameFillValueRef.current.trim() === "") return;
+    submitGameAnswer(gameFillValueRef.current.trim());
+  }
+
+  useEffect(() => {
+    if (gameStatus === "playing" && gameQuestion && gameQuestion.type === "fill" && gameInputRef.current) {
+      gameInputRef.current.focus();
+    }
+  }, [gameQuestion, gameStatus]);
+
+  useEffect(() => {
+    function onGameKeyDown(e) {
+      if (appMode !== "game" || gameStatus !== "playing") return;
+      if (e.key !== "Enter") return;
+      const q = gameQuestionRef.current;
+      if (!q || q.type !== "fill" || gameFeedbackRef.current) return;
+      e.preventDefault();
+      handleGameFillSubmit();
+    }
+    document.addEventListener("keydown", onGameKeyDown);
+    return () => document.removeEventListener("keydown", onGameKeyDown);
+  });
+
+  useEffect(() => () => {
+    if (gameTimerRef.current) clearInterval(gameTimerRef.current);
+    if (gameAdvanceRef.current) clearTimeout(gameAdvanceRef.current);
   }, []);
 
   function handleReset() {
@@ -480,7 +739,7 @@ export default function BuddhiDrill() {
   }
 
   // updates one end (0=min, 1=max) of a two-value range for a category/field,
-  // e.g. updateRangePair('tables', 'base', 0, 5)
+  // e.g. updateRangePair('multiplication', 'a', 0, 5)
   function updateRangePair(cat, field, idx, rawValue) {
     const limitsKey = `${cat}${field.charAt(0).toUpperCase()}${field.slice(1)}`;
     const [lo, hi] = ABSOLUTE_LIMITS[limitsKey] || [1, 99];
@@ -512,18 +771,18 @@ export default function BuddhiDrill() {
   const accuracyPct = session.total > 0 ? Math.round((session.correct / session.total) * 100) : 0;
 
   return (
-    <div style={styles.page}>
+    <div style={styles.page} className="bd-page">
       <style>{FONT_IMPORT + GLOBAL_CSS}</style>
 
-      <div style={styles.wrap}>
+      <div style={styles.wrap} className="bd-wrap">
         {/* ADMIT-CARD HEADER */}
-        <header style={styles.header}>
+        <header style={styles.header} className="bd-header">
           <div style={styles.headerLeft}>
             <div style={styles.eyebrow}>BUDDHIDRILL · MENTAL MATH &amp; REASONING DRILLS</div>
             <h1 style={styles.title}>BuddhiDrill</h1>
-            <div style={styles.subtitle}>Tables · Squares · Cubes · Fraction–% · Quick % — built for govt exam quant &amp; reasoning</div>
+            <div style={styles.subtitle}>+ − × ÷ · Squares · Cubes · Fraction–% · Quick % — built for govt exam quant &amp; reasoning</div>
           </div>
-          <div style={styles.stampBox}>
+          <div style={styles.stampBox} className="bd-stamp">
             <div style={styles.stampRow}>
               <span style={styles.stampLabel}>SCORE</span>
               <span style={styles.stampVal}>{session.correct}/{session.total}</span>
@@ -539,6 +798,35 @@ export default function BuddhiDrill() {
           </div>
         </header>
 
+        {/* APP MODE: PRACTICE VS GAME */}
+        <div style={styles.modeRow}>
+          <span style={styles.modeLabel}>Mode:</span>
+          <div style={styles.segmentGroup}>
+            {[
+              { id: "practice", label: "📖 Practice" },
+              { id: "game", label: "🎮 Game" },
+            ].map((opt) => {
+              const on = appMode === opt.id;
+              return (
+                <button
+                  key={opt.id}
+                  onClick={() => setAppMode(opt.id)}
+                  style={{
+                    ...styles.segmentBtn,
+                    background: on ? "#E8B23D" : "transparent",
+                    color: on ? "#0B1929" : "#93A6B8",
+                    fontWeight: on ? 700 : 500,
+                  }}
+                >
+                  {opt.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {appMode === "practice" && (
+        <>
         {/* CATEGORY TOGGLES */}
         <div style={styles.chipsRow}>
           {CATEGORY_ORDER.map((cat) => {
@@ -642,20 +930,68 @@ export default function BuddhiDrill() {
 
         {showCustomize && (
           <div style={styles.customizePanel}>
-            {active.tables && (
+            {active.multiplication && (
               <RangeRow
-                label="Tables — table number"
-                value={ranges.tables.base}
-                onChange={(idx, v) => updateRangePair("tables", "base", idx, v)}
-                limits={ABSOLUTE_LIMITS.tablesBase}
+                label="Multiplication — 1st number"
+                value={ranges.multiplication.a}
+                onChange={(idx, v) => updateRangePair("multiplication", "a", idx, v)}
+                limits={ABSOLUTE_LIMITS.multiplicationA}
               />
             )}
-            {active.tables && (
+            {active.multiplication && (
               <RangeRow
-                label="Tables — multiplier (×1 to ×N)"
-                value={ranges.tables.mult}
-                onChange={(idx, v) => updateRangePair("tables", "mult", idx, v)}
-                limits={ABSOLUTE_LIMITS.tablesMult}
+                label="Multiplication — 2nd number"
+                value={ranges.multiplication.b}
+                onChange={(idx, v) => updateRangePair("multiplication", "b", idx, v)}
+                limits={ABSOLUTE_LIMITS.multiplicationB}
+              />
+            )}
+            {active.addition && (
+              <RangeRow
+                label="Addition — 1st number"
+                value={ranges.addition.a}
+                onChange={(idx, v) => updateRangePair("addition", "a", idx, v)}
+                limits={ABSOLUTE_LIMITS.additionA}
+              />
+            )}
+            {active.addition && (
+              <RangeRow
+                label="Addition — 2nd number"
+                value={ranges.addition.b}
+                onChange={(idx, v) => updateRangePair("addition", "b", idx, v)}
+                limits={ABSOLUTE_LIMITS.additionB}
+              />
+            )}
+            {active.subtraction && (
+              <RangeRow
+                label="Subtraction — 1st number"
+                value={ranges.subtraction.a}
+                onChange={(idx, v) => updateRangePair("subtraction", "a", idx, v)}
+                limits={ABSOLUTE_LIMITS.subtractionA}
+              />
+            )}
+            {active.subtraction && (
+              <RangeRow
+                label="Subtraction — 2nd number"
+                value={ranges.subtraction.b}
+                onChange={(idx, v) => updateRangePair("subtraction", "b", idx, v)}
+                limits={ABSOLUTE_LIMITS.subtractionB}
+              />
+            )}
+            {active.division && (
+              <RangeRow
+                label="Division — divisor"
+                value={ranges.division.divisor}
+                onChange={(idx, v) => updateRangePair("division", "divisor", idx, v)}
+                limits={ABSOLUTE_LIMITS.divisionDivisor}
+              />
+            )}
+            {active.division && (
+              <RangeRow
+                label="Division — quotient (the answer)"
+                value={ranges.division.quotient}
+                onChange={(idx, v) => updateRangePair("division", "quotient", idx, v)}
+                limits={ABSOLUTE_LIMITS.divisionQuotient}
               />
             )}
             {active.squares && (
@@ -695,12 +1031,12 @@ export default function BuddhiDrill() {
                 limits={ABSOLUTE_LIMITS.quickpctMult}
               />
             )}
-            <div style={styles.customizeHint}>Higher table/square/cube numbers and bigger multipliers = harder mental math.</div>
+            <div style={styles.customizeHint}>Bigger numbers and wider ranges = harder mental math. Changing any value switches Difficulty to "Custom".</div>
           </div>
         )}
 
         {/* QUESTION CARD */}
-        <div style={styles.paperCard}>
+        <div style={styles.paperCard} className="bd-card">
           <div style={styles.paperTopRow}>
             <span style={{ ...styles.catPill, background: question ? CATEGORY_META[question.category].ink : "#999" }}>
               {question ? CATEGORY_META[question.category].label : "—"}
@@ -714,10 +1050,10 @@ export default function BuddhiDrill() {
             <div style={styles.emptyState}>Pick at least one category above to start drilling.</div>
           ) : (
             <>
-              <div style={styles.promptText}>{question.prompt}</div>
+              <div style={styles.promptText} className="bd-prompt">{question.prompt}</div>
 
               {question.type === "mcq" ? (
-                <div style={styles.optionsGrid}>
+                <div style={styles.optionsGrid} className="bd-options-grid">
                   {question.options.map((opt, i) => {
                     const isSelected = selected !== null && String(opt) === String(selected);
                     const isCorrectOpt = feedback && String(opt) === String(question.answer);
@@ -741,7 +1077,7 @@ export default function BuddhiDrill() {
                   })}
                 </div>
               ) : (
-                <form onSubmit={handleFillSubmit} style={styles.fillRow}>
+                <form onSubmit={handleFillSubmit} style={styles.fillRow} className="bd-fill-row">
                   <input
                     ref={inputRef}
                     type="text"
@@ -750,6 +1086,7 @@ export default function BuddhiDrill() {
                     disabled={!!feedback}
                     onChange={(e) => setFillValue(e.target.value)}
                     placeholder={question.placeholder || "type your answer"}
+                    className="bd-fill-input"
                     style={{
                       ...styles.fillInput,
                       borderColor: feedback === "correct" ? "#1F6F5C" : feedback === "wrong" ? "#C0392B" : "#B9AE94",
@@ -759,6 +1096,7 @@ export default function BuddhiDrill() {
                     type="submit"
                     disabled={!!feedback}
                     style={styles.submitBtn}
+                    className="bd-submit-btn"
                   >
                     Check
                   </button>
@@ -784,6 +1122,31 @@ export default function BuddhiDrill() {
             </>
           )}
         </div>
+        </>
+        )}
+
+        {appMode === "game" && (
+          <GamePanel
+            gameCats={gameCats}
+            toggleGameCat={toggleGameCat}
+            gameDuration={gameDuration}
+            setGameDuration={setGameDuration}
+            gameStatus={gameStatus}
+            gameTimeLeft={gameTimeLeft}
+            gameQuestion={gameQuestion}
+            gameSelected={gameSelected}
+            gameFillValue={gameFillValue}
+            setGameFillValue={setGameFillValue}
+            gameFeedback={gameFeedback}
+            gameTally={gameTally}
+            gameBest={gameBest}
+            startGame={startGame}
+            submitGameAnswer={submitGameAnswer}
+            handleGameFillSubmit={handleGameFillSubmit}
+            gameInputRef={gameInputRef}
+            setGameStatus={setGameStatus}
+          />
+        )}
 
         {/* HEATMAP */}
         <div style={styles.heatmapSection}>
@@ -796,21 +1159,73 @@ export default function BuddhiDrill() {
 
           {showHeatmap && (
             <>
-              <Heatmap category="tables" title="Tables (2–25)" items={range(2, 25)} stats={stats} />
-              <Heatmap category="squares" title="Squares (1–25)" items={range(1, 25)} stats={stats} />
-              <Heatmap category="cubes" title="Cubes (1–25)" items={range(1, 25)} stats={stats} />
-              <Heatmap
-                category="fractions"
-                title="Fraction ↔ %"
-                items={FRACTIONS.map(([n, d]) => `${n}/${d}`)}
-                stats={stats}
-              />
-              <Heatmap
-                category="quickpct"
-                title="Quick % of a number"
-                items={QUICK_PCT.map(([n, d]) => pctLabel(n, d))}
-                stats={stats}
-              />
+              {active.multiplication && (
+                <Heatmap
+                  category="multiplication"
+                  title={`Multiplication (${ranges.multiplication.a[0]}–${ranges.multiplication.a[1]})`}
+                  items={range(ranges.multiplication.a[0], ranges.multiplication.a[1])}
+                  stats={stats}
+                />
+              )}
+              {active.addition && (
+                <Heatmap
+                  category="addition"
+                  title={`Addition (${ranges.addition.a[0]}–${ranges.addition.a[1]})`}
+                  items={bucketItemsForRange(ranges.addition.a[0], ranges.addition.a[1])}
+                  stats={stats}
+                />
+              )}
+              {active.subtraction && (
+                <Heatmap
+                  category="subtraction"
+                  title={`Subtraction (${Math.min(ranges.subtraction.a[0], ranges.subtraction.b[0])}–${Math.max(ranges.subtraction.a[1], ranges.subtraction.b[1])})`}
+                  items={bucketItemsForRange(
+                    Math.min(ranges.subtraction.a[0], ranges.subtraction.b[0]),
+                    Math.max(ranges.subtraction.a[1], ranges.subtraction.b[1])
+                  )}
+                  stats={stats}
+                />
+              )}
+              {active.division && (
+                <Heatmap
+                  category="division"
+                  title={`Division — divisor (${ranges.division.divisor[0]}–${ranges.division.divisor[1]})`}
+                  items={range(ranges.division.divisor[0], ranges.division.divisor[1])}
+                  stats={stats}
+                />
+              )}
+              {active.squares && (
+                <Heatmap
+                  category="squares"
+                  title={`Squares (${ranges.squares.n[0]}–${ranges.squares.n[1]})`}
+                  items={range(ranges.squares.n[0], ranges.squares.n[1])}
+                  stats={stats}
+                />
+              )}
+              {active.cubes && (
+                <Heatmap
+                  category="cubes"
+                  title={`Cubes (${ranges.cubes.n[0]}–${ranges.cubes.n[1]})`}
+                  items={range(ranges.cubes.n[0], ranges.cubes.n[1])}
+                  stats={stats}
+                />
+              )}
+              {active.fractions && (
+                <Heatmap
+                  category="fractions"
+                  title="Fraction ↔ %"
+                  items={FRACTIONS.filter(([, d]) => d <= ranges.fractions.maxDen).map(([n, d]) => `${n}/${d}`)}
+                  stats={stats}
+                />
+              )}
+              {active.quickpct && (
+                <Heatmap
+                  category="quickpct"
+                  title="Quick % of a number"
+                  items={QUICK_PCT.map(([n, d]) => pctLabel(n, d))}
+                  stats={stats}
+                />
+              )}
 
               <div style={styles.legendRow}>
                 <span style={styles.legendLabel}>Legend:</span>
@@ -881,6 +1296,163 @@ function hexToRgb(hex) {
   };
 }
 
+function GamePanel({
+  gameCats, toggleGameCat, gameDuration, setGameDuration, gameStatus, gameTimeLeft,
+  gameQuestion, gameSelected, gameFillValue, setGameFillValue, gameFeedback, gameTally,
+  gameBest, startGame, submitGameAnswer, handleGameFillSubmit, gameInputRef, setGameStatus,
+}) {
+  const GAME_CATS = ["multiplication", "addition", "subtraction", "division", "squares", "cubes"];
+  const accuracy = gameTally.correct + gameTally.wrong > 0
+    ? Math.round((gameTally.correct / (gameTally.correct + gameTally.wrong)) * 100)
+    : 0;
+
+  return (
+    <div style={styles.gamePanel} className="bd-card">
+      {gameStatus === "setup" && (
+        <>
+          <div style={styles.gameSetupTitle}>🎮 Pick your challenge</div>
+          <div style={styles.gameCatRow}>
+            {GAME_CATS.map((cat) => {
+              const meta = CATEGORY_META[cat];
+              const on = gameCats[cat];
+              return (
+                <button
+                  key={cat}
+                  onClick={() => toggleGameCat(cat)}
+                  style={{
+                    ...styles.gameCatChip,
+                    borderColor: on ? meta.ink : "#3E566B",
+                    background: on ? meta.ink : "transparent",
+                    color: on ? "#F4EFE3" : "#7C93A8",
+                  }}
+                >
+                  <span style={styles.chipTag}>{meta.short}</span> {meta.label}
+                </button>
+              );
+            })}
+          </div>
+          <div style={styles.gameHint}>Pick one for a focused drill, or select two or three to mix it up.</div>
+
+          <div style={styles.gameDurationRow}>
+            <span style={styles.modeLabel}>Duration:</span>
+            <div style={styles.segmentGroup}>
+              {[30, 60, 90].map((d) => (
+                <button
+                  key={d}
+                  onClick={() => setGameDuration(d)}
+                  style={{
+                    ...styles.segmentBtn,
+                    background: gameDuration === d ? "#E8B23D" : "transparent",
+                    color: gameDuration === d ? "#0B1929" : "#93A6B8",
+                    fontWeight: gameDuration === d ? 700 : 500,
+                  }}
+                >
+                  {d}s
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {gameBest > 0 && (
+            <div style={styles.gameBestLine}>🏆 Best at {gameDuration}s: <b>{gameBest}</b> correct</div>
+          )}
+
+          <button style={styles.gameStartBtn} onClick={startGame}>Start Game →</button>
+        </>
+      )}
+
+      {gameStatus === "playing" && gameQuestion && (
+        <>
+          <div style={styles.gameTopBar}>
+            <span style={{ ...styles.catPill, background: CATEGORY_META[gameQuestion.category].ink }}>
+              {CATEGORY_META[gameQuestion.category].label}
+            </span>
+            <span style={styles.gameTimer}>⏱ {gameTimeLeft}s</span>
+            <span style={styles.gameScoreLive}>✓ {gameTally.correct} &nbsp; ✕ {gameTally.wrong}</span>
+          </div>
+
+          <div style={styles.gamePromptText} className="bd-prompt">{gameQuestion.prompt}</div>
+
+          {gameQuestion.type === "mcq" ? (
+            <div style={styles.optionsGrid} className="bd-options-grid">
+              {gameQuestion.options.map((opt, i) => {
+                const isSelected = gameSelected !== null && String(opt) === String(gameSelected);
+                const isCorrectOpt = gameFeedback && String(opt) === String(gameQuestion.answer);
+                let bg = "#FFFDF7", border = "#D8CFB8", color = "#1F2937";
+                if (gameFeedback) {
+                  if (isCorrectOpt) { bg = "#E4F0E9"; border = "#1F6F5C"; color = "#1F6F5C"; }
+                  else if (isSelected) { bg = "#F6E4E1"; border = "#C0392B"; color = "#C0392B"; }
+                }
+                return (
+                  <button
+                    key={i}
+                    disabled={!!gameFeedback}
+                    onClick={() => submitGameAnswer(opt)}
+                    style={{ ...styles.optionBtn, background: bg, borderColor: border, color }}
+                  >
+                    {opt}
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <form onSubmit={handleGameFillSubmit} style={styles.fillRow} className="bd-fill-row">
+              <input
+                ref={gameInputRef}
+                type="text"
+                inputMode="decimal"
+                value={gameFillValue}
+                disabled={!!gameFeedback}
+                onChange={(e) => setGameFillValue(e.target.value)}
+                placeholder="type your answer"
+                className="bd-fill-input"
+                style={{
+                  ...styles.fillInput,
+                  borderColor: gameFeedback === "correct" ? "#1F6F5C" : gameFeedback === "wrong" ? "#C0392B" : "#B9AE94",
+                }}
+              />
+              <button type="submit" disabled={!!gameFeedback} style={styles.submitBtn} className="bd-submit-btn">Check</button>
+            </form>
+          )}
+
+          {gameFeedback && (
+            <div style={{
+              ...styles.feedbackBar,
+              background: gameFeedback === "correct" ? "#E4F0E9" : "#F6E4E1",
+              color: gameFeedback === "correct" ? "#1F6F5C" : "#C0392B",
+            }}>
+              {gameFeedback === "correct" ? "✓ Correct" : `✕ answer: ${gameQuestion.answer}`}
+            </div>
+          )}
+        </>
+      )}
+
+      {gameStatus === "finished" && (
+        <div style={styles.gameResults}>
+          <div style={styles.gameResultsTitle}>⏹ Time's up!</div>
+          <div style={styles.gameResultsScore}>{gameTally.correct} correct</div>
+          <div style={styles.gameResultsSub}>{accuracy}% accuracy · {gameTally.wrong} missed</div>
+          {gameTally.correct >= gameBest && gameTally.correct > 0 && (
+            <div style={styles.gameNewBest}>🏆 New best!</div>
+          )}
+          <div style={styles.gameResultsBreakdown}>
+            {Object.entries(gameTally.byCat).map(([cat, v]) => (
+              <div key={cat} style={styles.gameResultsRow}>
+                <span>{CATEGORY_META[cat].label}</span>
+                <span>{v.correct}/{v.total}</span>
+              </div>
+            ))}
+          </div>
+          <div style={styles.gameResultsBtns}>
+            <button style={styles.gameStartBtn} onClick={startGame}>Play Again</button>
+            <button style={styles.linkBtn} onClick={() => setGameStatus("setup")}>Change Settings</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function RangeRow({ label, value, onChange, limits }) {
   return (
     <div style={styles.rangeRow}>
@@ -943,6 +1515,53 @@ const GLOBAL_CSS = `
   input::placeholder { color: #A79A7C; }
   button { cursor: pointer; font-family: inherit; }
   button:disabled { cursor: default; }
+
+  /* ---- Mobile responsiveness ---- */
+  @media (max-width: 640px) {
+    .bd-page { padding: 18px 10px 44px !important; }
+    .bd-wrap { padding-left: 2px; padding-right: 2px; }
+
+    .bd-header {
+      flex-direction: column !important;
+      align-items: stretch !important;
+      gap: 14px !important;
+    }
+    .bd-stamp {
+      min-width: 0 !important;
+      width: 100% !important;
+    }
+
+    .bd-card {
+      padding: 16px 14px 16px !important;
+    }
+
+    .bd-prompt {
+      padding: 14px 4px 18px !important;
+    }
+
+    .bd-options-grid {
+      grid-template-columns: repeat(2, 1fr) !important;
+      gap: 8px !important;
+    }
+
+    .bd-fill-row {
+      flex-direction: column !important;
+      align-items: stretch !important;
+    }
+    .bd-fill-input {
+      width: 100% !important;
+      font-size: 16px !important;
+    }
+    .bd-submit-btn {
+      width: 100% !important;
+    }
+  }
+
+  @media (max-width: 400px) {
+    .bd-options-grid {
+      grid-template-columns: 1fr !important;
+    }
+  }
 `;
 
 const styles = {
@@ -1061,6 +1680,92 @@ const styles = {
   rangeDash: { color: "#5E7590" },
   customizeHint: { fontSize: 11.5, color: "#5E7590", marginTop: 4 },
 
+  gamePanel: {
+    background: "#F4EFE3",
+    borderRadius: 16,
+    padding: "22px 24px 24px",
+    boxShadow: "0 20px 40px -18px rgba(0,0,0,0.55)",
+    marginBottom: 26,
+  },
+  gameSetupTitle: {
+    fontFamily: "'Space Grotesk', sans-serif",
+    fontSize: 20,
+    fontWeight: 700,
+    color: "#1F2937",
+    marginBottom: 14,
+    textAlign: "center",
+  },
+  gameCatRow: { display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center" },
+  gameCatChip: {
+    border: "1.5px solid",
+    borderRadius: 999,
+    padding: "8px 16px",
+    fontSize: 13,
+    fontWeight: 600,
+  },
+  gameHint: { textAlign: "center", fontSize: 12, color: "#8A7F63", marginTop: 10 },
+  gameDurationRow: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    marginTop: 18,
+    flexWrap: "wrap",
+  },
+  gameBestLine: { textAlign: "center", fontSize: 12.5, color: "#8A7F63", marginTop: 14 },
+  gameStartBtn: {
+    display: "block",
+    margin: "20px auto 0",
+    border: "none",
+    borderRadius: 999,
+    padding: "13px 30px",
+    background: "#1F2937",
+    color: "#F4EFE3",
+    fontWeight: 700,
+    fontSize: 15,
+  },
+  gameTopBar: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+    marginBottom: 10,
+    flexWrap: "wrap",
+  },
+  gameTimer: { fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, color: "#8A4B2B", fontSize: 15 },
+  gameScoreLive: { fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, color: "#1F2937", fontSize: 13 },
+  gamePromptText: {
+    fontFamily: "'JetBrains Mono', monospace",
+    fontSize: "clamp(24px, 5.5vw, 32px)",
+    fontWeight: 700,
+    color: "#1F2937",
+    textAlign: "center",
+    padding: "16px 8px 22px",
+  },
+  gameResults: { textAlign: "center", padding: "10px 0" },
+  gameResultsTitle: { fontFamily: "'Space Grotesk', sans-serif", fontSize: 18, fontWeight: 700, color: "#1F2937" },
+  gameResultsScore: {
+    fontFamily: "'JetBrains Mono', monospace",
+    fontSize: 44,
+    fontWeight: 700,
+    color: "#1F6F5C",
+    margin: "6px 0 2px",
+  },
+  gameResultsSub: { fontSize: 13, color: "#8A7F63" },
+  gameNewBest: { fontSize: 13, fontWeight: 700, color: "#E8A23D", marginTop: 8 },
+  gameResultsBreakdown: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 6,
+    maxWidth: 260,
+    margin: "18px auto 0",
+    fontFamily: "'JetBrains Mono', monospace",
+    fontSize: 13,
+    color: "#1F2937",
+  },
+  gameResultsRow: { display: "flex", justifyContent: "space-between", borderBottom: "1px dashed #D8CFB8", paddingBottom: 4 },
+  gameResultsBtns: { display: "flex", gap: 12, justifyContent: "center", marginTop: 20, flexWrap: "wrap" },
+
   paperCard: {
     background: "#F4EFE3",
     borderRadius: 16,
@@ -1139,6 +1844,8 @@ const styles = {
     fontWeight: 700,
     fontFamily: "'JetBrains Mono', monospace",
     fontSize: 14,
+    flexWrap: "wrap",
+    gap: 10,
   },
   nextBtn: {
     border: "none",
