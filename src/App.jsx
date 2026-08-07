@@ -1,4 +1,50 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
+import { initializeApp } from "firebase/app";
+import {
+  getDatabase, ref, set, get, update, remove, onValue, onDisconnect,
+} from "firebase/database";
+
+/* ============================================================
+   FIREBASE — used only for Battle Mode (shared rooms between two
+   devices). Practice/Game/heatmap stay fully local (localStorage) and
+   never touch this. See the setup notes for how to fill this in.
+   ============================================================ */
+
+const firebaseConfig = {
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  databaseURL: import.meta.env.VITE_FIREBASE_DATABASE_URL,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+};
+
+let _dbInstance;
+let _dbInitTried = false;
+function getFirebaseDb() {
+  if (_dbInitTried) return _dbInstance;
+  _dbInitTried = true;
+  try {
+    if (!firebaseConfig.databaseURL) throw new Error("Firebase env vars not set");
+    const app = initializeApp(firebaseConfig);
+    _dbInstance = getDatabase(app);
+  } catch (e) {
+    console.warn("Battle Mode: Firebase not configured yet.", e);
+    _dbInstance = null;
+  }
+  return _dbInstance;
+}
+
+function newRoomCode() {
+  const charset = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"; // no 0/O/1/I — easy to read aloud
+  let code = "";
+  for (let i = 0; i < 5; i++) code += charset[Math.floor(Math.random() * charset.length)];
+  return code;
+}
+function newPlayerId() {
+  return "p_" + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+}
 
 /* ============================================================
    DATA
@@ -102,8 +148,11 @@ function pctLabel(num, den) {
   const r = Math.round(v * 100) / 100;
   return Number.isInteger(r) ? `${r}` : r.toFixed(2).replace(/0$/, "");
 }
-function randInt(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
-function pick(arr) { return arr[randInt(0, arr.length - 1)]; }
+function randInt(min, max, rng) {
+  const r = rng ? rng() : Math.random();
+  return Math.floor(r * (max - min + 1)) + min;
+}
+function pick(arr, rng) { return arr[randInt(0, arr.length - 1, rng)]; }
 
 // groups a wide numeric range into ~10 buckets so heatmaps stay readable
 // even when the user opens the range up to e.g. 100-999
@@ -126,20 +175,79 @@ function bucketItemsForRange(lo, hi) {
   }
   return items;
 }
-function shuffle(arr) {
+
+/* ============================================================
+   SETTINGS HANDLER FACTORIES — Practice and Battle each keep their own
+   independent active/ranges/difficulty/answerMode state, but the logic
+   for toggling a category or editing a range is identical, so it's
+   built once here and bound to whichever setters are passed in.
+   ============================================================ */
+
+function clampInt(val, lo, hi) {
+  if (Number.isNaN(val)) return lo;
+  return Math.min(Math.max(val, lo), hi);
+}
+
+function makeToggleCategory(setActiveFn) {
+  return (cat) => {
+    setActiveFn((a) => {
+      const next = { ...a, [cat]: !a[cat] };
+      if (!Object.values(next).some(Boolean)) return a; // keep at least one on
+      return next;
+    });
+  };
+}
+
+function makeApplyDifficulty(setRangesFn, setDifficultyLabelFn) {
+  return (label) => {
+    setDifficultyLabelFn(label);
+    setRangesFn(JSON.parse(JSON.stringify(DIFFICULTY_PRESETS[label])));
+  };
+}
+
+// updates one end (0=min, 1=max) of a two-value range for a category/field,
+// e.g. updateRangePair('multiplication', 'a', 0, 5)
+function makeUpdateRangePair(setRangesFn, setDifficultyLabelFn) {
+  return (cat, field, idx, rawValue) => {
+    const limitsKey = `${cat}${field.charAt(0).toUpperCase()}${field.slice(1)}`;
+    const [lo, hi] = ABSOLUTE_LIMITS[limitsKey] || [1, 99];
+    const value = clampInt(parseInt(rawValue, 10), lo, hi);
+    setDifficultyLabelFn("custom");
+    setRangesFn((r) => {
+      const pair = [...r[cat][field]];
+      pair[idx] = value;
+      if (pair[0] > pair[1]) {
+        if (idx === 0) pair[1] = pair[0]; else pair[0] = pair[1];
+      }
+      return { ...r, [cat]: { ...r[cat], [field]: pair } };
+    });
+  };
+}
+
+function makeUpdateSingleValue(setRangesFn, setDifficultyLabelFn) {
+  return (cat, field, rawValue) => {
+    const limitsKey = `${cat}${field.charAt(0).toUpperCase()}${field.slice(1)}`;
+    const [lo, hi] = ABSOLUTE_LIMITS[limitsKey] || [1, 99];
+    const value = clampInt(parseInt(rawValue, 10), lo, hi);
+    setDifficultyLabelFn("custom");
+    setRangesFn((r) => ({ ...r, [cat]: { ...r[cat], [field]: value } }));
+  };
+}
+
+function shuffle(arr, rng) {
   const a = [...arr];
   for (let i = a.length - 1; i > 0; i--) {
-    const j = randInt(0, i);
+    const j = randInt(0, i, rng);
     [a[i], a[j]] = [a[j], a[i]];
   }
   return a;
 }
-function numDistractors(answer, spread, count = 3) {
+function numDistractors(answer, spread, count = 3, rng) {
   const set = new Set([answer]);
   let guard = 0;
   while (set.size < count + 1 && guard < 200) {
     guard++;
-    const delta = randInt(-spread, spread);
+    const delta = randInt(-spread, spread, rng);
     const cand = answer + (delta === 0 ? spread : delta);
     if (cand > 0 && !set.has(cand)) set.add(cand);
   }
@@ -151,117 +259,119 @@ function numDistractors(answer, spread, count = 3) {
    returns { category, key, keyLabel, prompt, answer, type, options?, checkFillBlank }
    ============================================================ */
 
-function genMultiplication(forceType, ranges) {
+function rnd(rng) { return rng ? rng() : Math.random(); }
+
+function genMultiplication(forceType, ranges, rng) {
   const r = ranges.multiplication;
-  const a = randInt(r.a[0], r.a[1]);
-  const b = randInt(r.b[0], r.b[1]);
+  const a = randInt(r.a[0], r.a[1], rng);
+  const b = randInt(r.b[0], r.b[1], rng);
   const answer = a * b;
-  const asMcq = forceType ? forceType === "mcq" : Math.random() < 0.5;
+  const asMcq = forceType ? forceType === "mcq" : rnd(rng) < 0.5;
   const prompt = `${a} × ${b} = ?`;
   if (asMcq) {
-    const options = shuffle([answer, ...numDistractors(answer, Math.max(6, a))]);
+    const options = shuffle([answer, ...numDistractors(answer, Math.max(6, a), 3, rng)], rng);
     return { category: "multiplication", key: a, keyLabel: a, prompt, answer, type: "mcq", options };
   }
   return { category: "multiplication", key: a, keyLabel: a, prompt, answer, type: "fill" };
 }
 
-function genAddition(forceType, ranges) {
+function genAddition(forceType, ranges, rng) {
   const r = ranges.addition;
-  const a = randInt(r.a[0], r.a[1]);
-  const b = randInt(r.b[0], r.b[1]);
+  const a = randInt(r.a[0], r.a[1], rng);
+  const b = randInt(r.b[0], r.b[1], rng);
   const answer = a + b;
   const key = bucketForRange(a, r.a[0], r.a[1]);
-  const asMcq = forceType ? forceType === "mcq" : Math.random() < 0.5;
+  const asMcq = forceType ? forceType === "mcq" : rnd(rng) < 0.5;
   const prompt = `${a} + ${b} = ?`;
   const spread = Math.max(5, Math.round(answer * 0.15));
   if (asMcq) {
-    const options = shuffle([answer, ...numDistractors(answer, spread)]);
+    const options = shuffle([answer, ...numDistractors(answer, spread, 3, rng)], rng);
     return { category: "addition", key, keyLabel: key, prompt, answer, type: "mcq", options };
   }
   return { category: "addition", key, keyLabel: key, prompt, answer, type: "fill" };
 }
 
-function genSubtraction(forceType, ranges) {
+function genSubtraction(forceType, ranges, rng) {
   const r = ranges.subtraction;
-  const x = randInt(r.a[0], r.a[1]);
-  const y = randInt(r.b[0], r.b[1]);
+  const x = randInt(r.a[0], r.a[1], rng);
+  const y = randInt(r.b[0], r.b[1], rng);
   const big = Math.max(x, y);
   const small = Math.min(x, y);
   const answer = big - small;
   const key = bucketForRange(big, Math.min(r.a[0], r.b[0]), Math.max(r.a[1], r.b[1]));
-  const asMcq = forceType ? forceType === "mcq" : Math.random() < 0.5;
+  const asMcq = forceType ? forceType === "mcq" : rnd(rng) < 0.5;
   const prompt = `${big} − ${small} = ?`;
   const spread = Math.max(5, Math.round((answer || 1) * 0.2) + 3);
   if (asMcq) {
-    const options = shuffle([answer, ...numDistractors(answer, spread)]);
+    const options = shuffle([answer, ...numDistractors(answer, spread, 3, rng)], rng);
     return { category: "subtraction", key, keyLabel: key, prompt, answer, type: "mcq", options };
   }
   return { category: "subtraction", key, keyLabel: key, prompt, answer, type: "fill" };
 }
 
-function genDivision(forceType, ranges) {
+function genDivision(forceType, ranges, rng) {
   const r = ranges.division;
-  const divisor = randInt(r.divisor[0], r.divisor[1]);
-  const quotient = randInt(r.quotient[0], r.quotient[1]);
+  const divisor = randInt(r.divisor[0], r.divisor[1], rng);
+  const quotient = randInt(r.quotient[0], r.quotient[1], rng);
   const dividend = divisor * quotient;
   const answer = quotient;
-  const asMcq = forceType ? forceType === "mcq" : Math.random() < 0.5;
+  const asMcq = forceType ? forceType === "mcq" : rnd(rng) < 0.5;
   const prompt = `${dividend} ÷ ${divisor} = ?`;
   if (asMcq) {
-    const options = shuffle([answer, ...numDistractors(answer, Math.max(4, Math.round(answer * 0.3)))]);
+    const options = shuffle([answer, ...numDistractors(answer, Math.max(4, Math.round(answer * 0.3)), 3, rng)], rng);
     return { category: "division", key: divisor, keyLabel: divisor, prompt, answer, type: "mcq", options };
   }
   return { category: "division", key: divisor, keyLabel: divisor, prompt, answer, type: "fill" };
 }
 
-function genSquares(forceType, ranges) {
+function genSquares(forceType, ranges, rng) {
   const r = ranges.squares;
-  const n = randInt(r.n[0], r.n[1]);
+  const n = randInt(r.n[0], r.n[1], rng);
   const answer = n * n;
-  const asMcq = forceType ? forceType === "mcq" : Math.random() < 0.5;
+  const asMcq = forceType ? forceType === "mcq" : rnd(rng) < 0.5;
   const prompt = `${n}² = ?`;
   if (asMcq) {
-    const options = shuffle([answer, ...numDistractors(answer, Math.max(8, n * 2))]);
+    const options = shuffle([answer, ...numDistractors(answer, Math.max(8, n * 2), 3, rng)], rng);
     return { category: "squares", key: n, keyLabel: n, prompt, answer, type: "mcq", options };
   }
   return { category: "squares", key: n, keyLabel: n, prompt, answer, type: "fill" };
 }
 
-function genCubes(forceType, ranges) {
+function genCubes(forceType, ranges, rng) {
   const r = ranges.cubes;
-  const n = randInt(r.n[0], r.n[1]);
+  const n = randInt(r.n[0], r.n[1], rng);
   const answer = n * n * n;
-  const asMcq = forceType ? forceType === "mcq" : Math.random() < 0.5;
+  const asMcq = forceType ? forceType === "mcq" : rnd(rng) < 0.5;
   const prompt = `${n}³ = ?`;
   if (asMcq) {
     const spread = Math.max(20, Math.round(answer * 0.15));
-    const options = shuffle([answer, ...numDistractors(answer, spread)]);
+    const options = shuffle([answer, ...numDistractors(answer, spread, 3, rng)], rng);
     return { category: "cubes", key: n, keyLabel: n, prompt, answer, type: "mcq", options };
   }
   return { category: "cubes", key: n, keyLabel: n, prompt, answer, type: "fill" };
 }
 
-function genFractions(forceType, ranges) {
+function genFractions(forceType, ranges, rng) {
   const maxDen = ranges.fractions.maxDen;
   const pool = FRACTIONS.filter(([, d]) => d <= maxDen);
   const usable = pool.length >= 4 ? pool : FRACTIONS;
-  const [num, den] = pick(usable);
+  const [num, den] = pick(usable, rng);
   const key = `${num}/${den}`;
-  const directionA = Math.random() < 0.6; // fraction -> %
+  const directionA = rnd(rng) < 0.6; // fraction -> %
   if (directionA) {
     const answerLabel = pctLabel(num, den);
     const answerVal = parseFloat(answerLabel);
     const prompt = `${num}/${den} = ?%`;
-    const asMcq = forceType ? forceType === "mcq" : Math.random() < 0.6;
+    const asMcq = forceType ? forceType === "mcq" : rnd(rng) < 0.6;
     if (asMcq) {
       const distractors = [];
-      const others = shuffle(usable.filter((f) => f[0] !== num || f[1] !== den)).slice(0, 6);
+      const others = shuffle(usable.filter((f) => f[0] !== num || f[1] !== den), rng).slice(0, 6);
       for (const [n2, d2] of others) {
         const lbl = pctLabel(n2, d2);
         if (lbl !== answerLabel && !distractors.includes(lbl)) distractors.push(lbl);
         if (distractors.length >= 3) break;
       }
-      const options = shuffle([answerLabel, ...distractors]);
+      const options = shuffle([answerLabel, ...distractors], rng);
       return {
         category: "fractions", key, keyLabel: key, prompt, answer: answerLabel,
         type: "mcq", options,
@@ -275,7 +385,7 @@ function genFractions(forceType, ranges) {
     const [sn, sd] = simplify(num, den);
     const answer = `${sn}/${sd}`;
     const label = pctLabel(num, den);
-    const asMcq = forceType ? forceType === "mcq" : Math.random() < 0.5;
+    const asMcq = forceType ? forceType === "mcq" : rnd(rng) < 0.5;
     if (!asMcq) {
       const prompt = `${label}% = ? (lowest-terms fraction, e.g. 3/4)`;
       return {
@@ -284,7 +394,7 @@ function genFractions(forceType, ranges) {
       };
     }
     const prompt = `${label}% = ? (lowest terms fraction)`;
-    const others = shuffle(usable.filter((f) => f[0] !== num || f[1] !== den)).slice(0, 6);
+    const others = shuffle(usable.filter((f) => f[0] !== num || f[1] !== den), rng).slice(0, 6);
     const distractors = [];
     for (const [n2, d2] of others) {
       const [a, b] = simplify(n2, d2);
@@ -292,24 +402,24 @@ function genFractions(forceType, ranges) {
       if (lbl !== answer && !distractors.includes(lbl)) distractors.push(lbl);
       if (distractors.length >= 3) break;
     }
-    const options = shuffle([answer, ...distractors]);
+    const options = shuffle([answer, ...distractors], rng);
     return { category: "fractions", key, keyLabel: key, prompt, answer, type: "mcq", options };
   }
 }
 
-function genQuickPct(forceType, ranges) {
+function genQuickPct(forceType, ranges, rng) {
   const r = ranges.quickpct;
-  const [num, den] = pick(QUICK_PCT);
-  const mult = randInt(r.mult[0], r.mult[1]);
+  const [num, den] = pick(QUICK_PCT, rng);
+  const mult = randInt(r.mult[0], r.mult[1], rng);
   const base = den * mult;
   const answer = (base * num) / den;
   const label = pctLabel(num, den);
   const prompt = `${label}% of ${base} = ?`;
-  const asMcq = forceType ? forceType === "mcq" : Math.random() < 0.55;
+  const asMcq = forceType ? forceType === "mcq" : rnd(rng) < 0.55;
   const key = label;
   if (asMcq) {
     const spread = Math.max(4, Math.round(answer * 0.2));
-    const options = shuffle([answer, ...numDistractors(answer, spread)]);
+    const options = shuffle([answer, ...numDistractors(answer, spread, 3, rng)], rng);
     return { category: "quickpct", key, keyLabel: `${label}%`, prompt, answer, type: "mcq", options };
   }
   return { category: "quickpct", key, keyLabel: `${label}%`, prompt, answer, type: "fill" };
@@ -317,13 +427,13 @@ function genQuickPct(forceType, ranges) {
 
 function letterAt(pos) { return String.fromCharCode(64 + pos); }
 
-function letterDistractors(correctLetter, count, near) {
+function letterDistractors(correctLetter, count, near, rng) {
   const correctPos = correctLetter.charCodeAt(0) - 64;
   const set = new Set([correctLetter]);
   let guard = 0;
   while (set.size < count + 1 && guard < 200) {
     guard++;
-    const delta = randInt(-near, near);
+    const delta = randInt(-near, near, rng);
     const cand = correctPos + (delta === 0 ? near : delta);
     if (cand >= 1 && cand <= 26) {
       const L = letterAt(cand);
@@ -334,19 +444,19 @@ function letterDistractors(correctLetter, count, near) {
 }
 
 // A=1, B=2 ... Z=26, quizzed in both directions
-function genAlphaValue(forceType, ranges) {
+function genAlphaValue(forceType, ranges, rng) {
   const r = ranges.alphaValue;
-  const pos = randInt(r.pos[0], r.pos[1]);
+  const pos = randInt(r.pos[0], r.pos[1], rng);
   const letter = letterAt(pos);
   const key = letter;
-  const directionA = Math.random() < 0.5; // letter -> number
-  const asMcq = forceType ? forceType === "mcq" : Math.random() < 0.55;
+  const directionA = rnd(rng) < 0.5; // letter -> number
+  const asMcq = forceType ? forceType === "mcq" : rnd(rng) < 0.55;
 
   if (directionA) {
     const prompt = `${letter} = ?`;
     const answer = pos;
     if (asMcq) {
-      const options = shuffle([answer, ...numDistractors(answer, 5)]);
+      const options = shuffle([answer, ...numDistractors(answer, 5, 3, rng)], rng);
       return { category: "alphaValue", key, keyLabel: letter, prompt, answer, type: "mcq", options };
     }
     return { category: "alphaValue", key, keyLabel: letter, prompt, answer, type: "fill" };
@@ -355,7 +465,7 @@ function genAlphaValue(forceType, ranges) {
   const prompt = `${pos} = ?`;
   const answer = letter;
   if (asMcq) {
-    const options = shuffle([answer, ...letterDistractors(letter, 3, 6)]);
+    const options = shuffle([answer, ...letterDistractors(letter, 3, 6, rng)], rng);
     return { category: "alphaValue", key, keyLabel: letter, prompt, answer, type: "mcq", options };
   }
   return {
@@ -366,16 +476,16 @@ function genAlphaValue(forceType, ranges) {
 
 // mirror pairs: A<->Z, B<->Y, C<->X ... — picking any letter naturally
 // covers both "near the start" and "near the end" prompts
-function genAlphaOpposite(forceType, ranges) {
+function genAlphaOpposite(forceType, ranges, rng) {
   const r = ranges.alphaOpposite;
-  const pos = randInt(r.pos[0], r.pos[1]);
+  const pos = randInt(r.pos[0], r.pos[1], rng);
   const letter = letterAt(pos);
   const oppLetter = letterAt(27 - pos);
   const key = letter;
-  const asMcq = forceType ? forceType === "mcq" : Math.random() < 0.55;
+  const asMcq = forceType ? forceType === "mcq" : rnd(rng) < 0.55;
   const prompt = `Opposite of ${letter} = ?`;
   if (asMcq) {
-    const options = shuffle([oppLetter, ...letterDistractors(oppLetter, 3, 4)]);
+    const options = shuffle([oppLetter, ...letterDistractors(oppLetter, 3, 4, rng)], rng);
     return { category: "alphaOpposite", key, keyLabel: letter, prompt, answer: oppLetter, type: "mcq", options };
   }
   return {
@@ -396,6 +506,39 @@ const GENERATORS = {
   alphaValue: genAlphaValue,
   alphaOpposite: genAlphaOpposite,
 };
+
+/* ============================================================
+   BATTLE MODE — deterministic shared question sequence
+   Both players precompute the *same* array of questions locally from a
+   shared seed + shared settings, so nothing about the questions themselves
+   ever needs to travel over the network — only scores do.
+   ============================================================ */
+
+// mulberry32: small, fast, deterministic PRNG. Same seed -> same output stream,
+// on any device, forever — that's what keeps both players' questions in sync.
+function mulberry32(seed) {
+  let t = seed >>> 0;
+  return function () {
+    t += 0x6D2B79F5;
+    let r = Math.imul(t ^ (t >>> 15), 1 | t);
+    r = (r + Math.imul(r ^ (r >>> 7), 61 | r)) ^ r;
+    return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+const BATTLE_QUESTION_POOL_SIZE = 250; // plenty even for a fast player over 5 minutes
+
+function generateBattleQuestions(seed, categories, ranges, answerMode) {
+  const rng = mulberry32(seed);
+  const forceType = answerMode === "mixed" ? undefined : answerMode;
+  const cats = categories.length ? categories : ["multiplication"];
+  const qs = [];
+  for (let i = 0; i < BATTLE_QUESTION_POOL_SIZE; i++) {
+    const cat = cats[Math.floor(rng() * cats.length)];
+    qs.push(GENERATORS[cat](forceType, ranges, rng));
+  }
+  return qs;
+}
 
 /* ============================================================
    STATS HELPERS
@@ -527,6 +670,76 @@ export default function BuddhiDrill() {
       setGameBest(raw ? parseInt(raw, 10) || 0 : 0);
     } catch { /* ignore */ }
   }, [gameDuration]);
+
+  // ---- Battle mode state ----
+  const [battleStage, setBattleStage] = useState("menu"); // menu | create | join | lobby | countdown | playing | results
+  const [playerId] = useState(() => newPlayerId());
+  const [playerName, setPlayerName] = useState(() => {
+    try { return window.localStorage.getItem("buddhidrill-name") || ""; } catch { return ""; }
+  });
+  const [joinCodeInput, setJoinCodeInput] = useState("");
+  const [battleDuration, setBattleDuration] = useState(60);
+  const [battleError, setBattleError] = useState("");
+  const [battleBusy, setBattleBusy] = useState(false);
+  const [battleRoom, setBattleRoom] = useState(null);
+  const [battleCode, setBattleCode] = useState("");
+  const [battleQuestions, setBattleQuestions] = useState(null);
+  const [battleIdx, setBattleIdx] = useState(0);
+  const [battleSelected, setBattleSelected] = useState(null);
+  const [battleFillValue, setBattleFillValue] = useState("");
+  const [battleFeedback, setBattleFeedback] = useState(null);
+  const [battleScore, setBattleScore] = useState({ correct: 0, wrong: 0 });
+  const [battleTimeLeft, setBattleTimeLeft] = useState(0);
+
+  // Battle keeps its own independent category/range/difficulty/answer-mode
+  // settings — separate from Practice, so setting up a battle never
+  // depends on whatever you last had active in Practice
+  const [battleActive, setBattleActive] = useState({
+    multiplication: true, addition: true, subtraction: true, division: true,
+    squares: true, cubes: true, fractions: true, quickpct: true,
+    alphaValue: true, alphaOpposite: true,
+  });
+  const [battleRanges, setBattleRanges] = useState(DIFFICULTY_PRESETS.medium);
+  const [battleDifficultyLabel, setBattleDifficultyLabel] = useState("medium");
+  const [battleAnswerMode, setBattleAnswerMode] = useState("mixed");
+  const [battleShowCustomize, setBattleShowCustomize] = useState(false);
+
+  const toggleBattleCategory = makeToggleCategory(setBattleActive);
+  const applyBattleDifficulty = makeApplyDifficulty(setBattleRanges, setBattleDifficultyLabel);
+  const updateBattleRangePair = makeUpdateRangePair(setBattleRanges, setBattleDifficultyLabel);
+  const updateBattleSingleValue = makeUpdateSingleValue(setBattleRanges, setBattleDifficultyLabel);
+
+
+  const [battleCountdown, setBattleCountdown] = useState(0);
+
+  const battleStageRef = useRef("menu");
+  const battleCodeRef = useRef("");
+  const battleUnsubRef = useRef(null);
+  const battleTimerRef = useRef(null);
+  const battleAdvanceRef = useRef(null);
+  const battleCountdownTimerRef = useRef(null);
+  const battleQuestionsRef = useRef(null);
+  const battleIdxRef = useRef(0);
+  const battleFeedbackRef = useRef(null);
+  const battleFillValueRef = useRef("");
+  const battleQuestionStartRef = useRef(null);
+  const battleStartedSeedRef = useRef(null);
+  const battleInputRef = useRef(null);
+
+  useEffect(() => { battleStageRef.current = battleStage; }, [battleStage]);
+  useEffect(() => { battleCodeRef.current = battleCode; }, [battleCode]);
+  useEffect(() => { battleQuestionsRef.current = battleQuestions; }, [battleQuestions]);
+  useEffect(() => { battleIdxRef.current = battleIdx; }, [battleIdx]);
+  useEffect(() => { battleFeedbackRef.current = battleFeedback; }, [battleFeedback]);
+  useEffect(() => { battleFillValueRef.current = battleFillValue; }, [battleFillValue]);
+
+  // clean up any live listener/timers if the whole app unmounts
+  useEffect(() => () => {
+    if (battleUnsubRef.current) battleUnsubRef.current();
+    if (battleTimerRef.current) clearInterval(battleTimerRef.current);
+    if (battleAdvanceRef.current) clearTimeout(battleAdvanceRef.current);
+    if (battleCountdownTimerRef.current) clearTimeout(battleCountdownTimerRef.current);
+  }, []);
 
   useEffect(() => { feedbackRef.current = feedback; }, [feedback]);
   useEffect(() => { questionRef.current = question; }, [question]);
@@ -838,6 +1051,301 @@ export default function BuddhiDrill() {
     if (gameAdvanceRef.current) clearTimeout(gameAdvanceRef.current);
   }, []);
 
+  /* ============================================================
+     BATTLE MODE — Firebase-backed room, two players, same questions
+     ============================================================ */
+
+  function subscribeToRoom(code) {
+    const db = getFirebaseDb();
+    if (!db) return;
+    if (battleUnsubRef.current) battleUnsubRef.current();
+    const roomRef = ref(db, `rooms/${code}`);
+    battleUnsubRef.current = onValue(roomRef, (snap) => {
+      const val = snap.exists() ? snap.val() : null;
+      setBattleRoom(val);
+      if (!val) return; // room was removed (host left / expired)
+
+      // only ever start a round once per seed — otherwise every later
+      // write to the room (opponent's score ticking up, etc.) would
+      // re-trigger this and reset an already-finished player's score
+      if (val.status === "playing" && val.seed != null && val.seed !== battleStartedSeedRef.current) {
+        battleStartedSeedRef.current = val.seed;
+        beginBattleCountdown(val);
+      }
+      if (val.status === "waiting") {
+        battleStartedSeedRef.current = null;
+        if (battleStageRef.current === "results" || battleStageRef.current === "countdown") {
+          // host started a rematch — jump everyone back to the lobby
+          setBattleStage("lobby");
+        }
+      }
+
+      // once both players have finished, mark the room so late listeners
+      // don't try to (re)start anything and the lobby knows a round happened
+      if (val.status === "playing" && val.players) {
+        const ids = Object.keys(val.players);
+        const bothDone = ids.length === 2 && ids.every((id) => val.players[id].finishedAt);
+        if (bothDone && val.hostId === playerId) {
+          update(ref(db, `rooms/${code}`), { status: "finished" }).catch(() => {});
+        }
+      }
+    });
+  }
+
+  async function handleCreateRoom() {
+    const db = getFirebaseDb();
+    if (!db) { setBattleError("Battle Mode isn't configured yet — see the Firebase setup notes."); return; }
+    const name = playerName.trim() || "Player 1";
+    try { window.localStorage.setItem("buddhidrill-name", name); } catch { /* ignore */ }
+    setBattleError("");
+    setBattleBusy(true);
+    try {
+      let code = newRoomCode();
+      for (let tries = 0; tries < 5; tries++) {
+        const snap = await get(ref(db, `rooms/${code}`));
+        if (!snap.exists()) break;
+        code = newRoomCode();
+      }
+      const activeCats = CATEGORY_ORDER.filter((c) => battleActive[c]);
+      const roomData = {
+        code,
+        createdAt: Date.now(),
+        status: "waiting",
+        hostId: playerId,
+        duration: battleDuration,
+        settings: { categories: activeCats, ranges: battleRanges, answerMode: battleAnswerMode, difficultyLabel: battleDifficultyLabel },
+        seed: null,
+        startAt: null,
+        players: {
+          [playerId]: { name, isHost: true, score: { correct: 0, wrong: 0 }, finishedAt: null, joinedAt: Date.now() },
+        },
+      };
+      await set(ref(db, `rooms/${code}`), roomData);
+      onDisconnect(ref(db, `rooms/${code}/players/${playerId}`)).remove();
+      setBattleCode(code);
+      subscribeToRoom(code);
+      setBattleStage("lobby");
+    } catch (e) {
+      setBattleError("Couldn't create the room. Check your connection and try again.");
+    } finally {
+      setBattleBusy(false);
+    }
+  }
+
+  async function handleJoinRoom() {
+    const db = getFirebaseDb();
+    if (!db) { setBattleError("Battle Mode isn't configured yet — see the Firebase setup notes."); return; }
+    const code = joinCodeInput.trim().toUpperCase();
+    if (code.length < 4) { setBattleError("Enter the room code your friend shared with you."); return; }
+    const name = playerName.trim() || "Player 2";
+    try { window.localStorage.setItem("buddhidrill-name", name); } catch { /* ignore */ }
+    setBattleError("");
+    setBattleBusy(true);
+    try {
+      const snap = await get(ref(db, `rooms/${code}`));
+      if (!snap.exists()) { setBattleError("No room found with that code."); setBattleBusy(false); return; }
+      const room = snap.val();
+      if (room.status !== "waiting") { setBattleError("That room already started — ask for a new code."); setBattleBusy(false); return; }
+      const existingCount = room.players ? Object.keys(room.players).length : 0;
+      if (existingCount >= 2) { setBattleError("That room is already full."); setBattleBusy(false); return; }
+
+      await update(ref(db, `rooms/${code}/players/${playerId}`), {
+        name, isHost: false, score: { correct: 0, wrong: 0 }, finishedAt: null, joinedAt: Date.now(),
+      });
+      onDisconnect(ref(db, `rooms/${code}/players/${playerId}`)).remove();
+      setBattleCode(code);
+      subscribeToRoom(code);
+      setBattleStage("lobby");
+    } catch (e) {
+      setBattleError("Couldn't join that room. Check your connection and try again.");
+    } finally {
+      setBattleBusy(false);
+    }
+  }
+
+  function beginBattleCountdown(room) {
+    const qs = generateBattleQuestions(room.seed, room.settings.categories, room.settings.ranges, room.settings.answerMode);
+    setBattleQuestions(qs);
+    setBattleIdx(0);
+    setBattleScore({ correct: 0, wrong: 0 });
+    setBattleSelected(null);
+    setBattleFillValue("");
+    setBattleFeedback(null);
+    setBattleStage("countdown");
+
+    const tick = () => {
+      const msLeft = room.startAt - Date.now();
+      if (msLeft <= 0) {
+        setBattleStage("playing");
+        startBattleTimer(room.duration, room.startAt);
+        battleQuestionStartRef.current = Date.now();
+        return;
+      }
+      setBattleCountdown(Math.ceil(msLeft / 1000));
+      battleCountdownTimerRef.current = setTimeout(tick, 150);
+    };
+    tick();
+  }
+
+  function startBattleTimer(duration, startAt) {
+    if (battleTimerRef.current) clearInterval(battleTimerRef.current);
+    const endAt = startAt + duration * 1000;
+    const update_ = () => setBattleTimeLeft(Math.max(0, Math.round((endAt - Date.now()) / 1000)));
+    update_();
+    battleTimerRef.current = setInterval(() => {
+      update_();
+      if (Date.now() >= endAt) {
+        clearInterval(battleTimerRef.current);
+        battleTimerRef.current = null;
+        finishBattleForMe();
+      }
+    }, 250);
+  }
+
+  function finishBattleForMe() {
+    if (battleAdvanceRef.current) { clearTimeout(battleAdvanceRef.current); battleAdvanceRef.current = null; }
+    const db = getFirebaseDb();
+    if (db && battleCodeRef.current) {
+      update(ref(db, `rooms/${battleCodeRef.current}/players/${playerId}`), { finishedAt: Date.now() }).catch(() => {});
+    }
+    setBattleStage("results");
+  }
+
+  function submitBattleAnswer(userAnswer) {
+    if (battleStageRef.current !== "playing" || battleFeedbackRef.current) return;
+    const qs = battleQuestionsRef.current;
+    const idx = battleIdxRef.current;
+    const q = qs && qs[idx % qs.length];
+    if (!q) return;
+
+    let correct;
+    if (q.type === "mcq") {
+      correct = String(userAnswer) === String(q.answer);
+      setBattleSelected(userAnswer);
+    } else {
+      const raw = String(userAnswer).trim();
+      if (q.answerIsText) {
+        const norm = (s) => s.replace(/\s+/g, "").toLowerCase();
+        correct = norm(raw) === norm(String(q.answer));
+      } else {
+        const num = Number(raw);
+        correct = q.tolerance !== undefined
+          ? !Number.isNaN(num) && Math.abs(num - parseFloat(q.answer)) <= q.tolerance
+          : !Number.isNaN(num) && num === q.answer;
+      }
+    }
+    setBattleFeedback(correct ? "correct" : "wrong");
+
+    const elapsedMs = battleQuestionStartRef.current ? Date.now() - battleQuestionStartRef.current : 0;
+    const nextStats = recordAnswer(stats, q.category, q.key, correct, elapsedMs);
+    setStats(nextStats);
+    persist(nextStats);
+
+    setBattleScore((s) => {
+      const next = { correct: s.correct + (correct ? 1 : 0), wrong: s.wrong + (correct ? 0 : 1) };
+      const db = getFirebaseDb();
+      if (db && battleCodeRef.current) {
+        update(ref(db, `rooms/${battleCodeRef.current}/players/${playerId}`), { score: next }).catch(() => {});
+      }
+      return next;
+    });
+
+    if (battleAdvanceRef.current) clearTimeout(battleAdvanceRef.current);
+    battleAdvanceRef.current = setTimeout(() => {
+      battleAdvanceRef.current = null;
+      if (battleStageRef.current !== "playing") return;
+      setBattleIdx((i) => i + 1);
+      setBattleSelected(null);
+      setBattleFillValue("");
+      setBattleFeedback(null);
+      battleQuestionStartRef.current = Date.now();
+    }, correct ? 450 : 900);
+  }
+
+  function handleBattleFillSubmit(e) {
+    if (e && e.preventDefault) e.preventDefault();
+    if (battleFeedbackRef.current) return;
+    if (battleFillValueRef.current.trim() === "") return;
+    submitBattleAnswer(battleFillValueRef.current.trim());
+  }
+
+  useEffect(() => {
+    const q = battleQuestions && battleQuestions[battleIdx % battleQuestions.length];
+    if (battleStage === "playing" && q && q.type === "fill" && battleInputRef.current) {
+      battleInputRef.current.focus();
+    }
+  }, [battleIdx, battleStage, battleQuestions]);
+
+  useEffect(() => {
+    function onBattleKeyDown(e) {
+      if (appMode !== "battle" || battleStageRef.current !== "playing") return;
+      if (e.key !== "Enter") return;
+      const qs = battleQuestionsRef.current;
+      const q = qs && qs[battleIdxRef.current % qs.length];
+      if (!q || q.type !== "fill" || battleFeedbackRef.current) return;
+      e.preventDefault();
+      handleBattleFillSubmit();
+    }
+    document.addEventListener("keydown", onBattleKeyDown);
+    return () => document.removeEventListener("keydown", onBattleKeyDown);
+  });
+
+  async function handleSyncRoomSettings() {
+    const db = getFirebaseDb();
+    if (!db || !battleCode) return;
+    const activeCats = CATEGORY_ORDER.filter((c) => battleActive[c]);
+    await update(ref(db, `rooms/${battleCode}`), {
+      duration: battleDuration,
+      settings: { categories: activeCats, ranges: battleRanges, answerMode: battleAnswerMode, difficultyLabel: battleDifficultyLabel },
+    }).catch(() => {});
+  }
+
+  async function handleStartBattle() {
+    const db = getFirebaseDb();
+    if (!db || !battleCode) return;
+    const seed = Math.floor(Math.random() * 2 ** 31);
+    const startAt = Date.now() + 4000;
+    const activeCats = CATEGORY_ORDER.filter((c) => battleActive[c]);
+    await update(ref(db, `rooms/${battleCode}`), {
+      status: "playing", seed, startAt, duration: battleDuration,
+      settings: { categories: activeCats, ranges: battleRanges, answerMode: battleAnswerMode, difficultyLabel: battleDifficultyLabel },
+    }).catch(() => {});
+  }
+
+  async function handleRematch() {
+    const db = getFirebaseDb();
+    if (!db || !battleCode || !battleRoom) return;
+    const resetPlayers = {};
+    Object.entries(battleRoom.players || {}).forEach(([pid, p]) => {
+      resetPlayers[pid] = { ...p, score: { correct: 0, wrong: 0 }, finishedAt: null };
+    });
+    await update(ref(db, `rooms/${battleCode}`), {
+      status: "waiting", seed: null, startAt: null, players: resetPlayers,
+    }).catch(() => {});
+    setBattleStage("lobby");
+  }
+
+  function handleLeaveRoom() {
+    if (battleUnsubRef.current) { battleUnsubRef.current(); battleUnsubRef.current = null; }
+    if (battleTimerRef.current) { clearInterval(battleTimerRef.current); battleTimerRef.current = null; }
+    if (battleAdvanceRef.current) { clearTimeout(battleAdvanceRef.current); battleAdvanceRef.current = null; }
+    if (battleCountdownTimerRef.current) { clearTimeout(battleCountdownTimerRef.current); battleCountdownTimerRef.current = null; }
+    const db = getFirebaseDb();
+    if (db && battleCode) {
+      if (battleRoom && battleRoom.hostId === playerId) {
+        remove(ref(db, `rooms/${battleCode}`)).catch(() => {});
+      } else {
+        remove(ref(db, `rooms/${battleCode}/players/${playerId}`)).catch(() => {});
+      }
+    }
+    setBattleRoom(null);
+    setBattleCode("");
+    setBattleQuestions(null);
+    setBattleError("");
+    battleStartedSeedRef.current = null;
+    setBattleStage("menu");
+  }
+
   function handleReset() {
     const fresh = emptyStats();
     setStats(fresh);
@@ -845,48 +1353,11 @@ export default function BuddhiDrill() {
     setSession({ correct: 0, total: 0, streak: 0, best: 0 });
   }
 
-  function toggleCategory(cat) {
-    setActive((a) => {
-      const next = { ...a, [cat]: !a[cat] };
-      if (!Object.values(next).some(Boolean)) return a; // keep at least one on
-      return next;
-    });
-  }
+  function toggleCategory(cat) { makeToggleCategory(setActive)(cat); }
 
-  function applyDifficulty(label) {
-    setDifficultyLabel(label);
-    setRanges(JSON.parse(JSON.stringify(DIFFICULTY_PRESETS[label])));
-  }
-
-  function clamp(val, lo, hi) {
-    if (Number.isNaN(val)) return lo;
-    return Math.min(Math.max(val, lo), hi);
-  }
-
-  // updates one end (0=min, 1=max) of a two-value range for a category/field,
-  // e.g. updateRangePair('multiplication', 'a', 0, 5)
-  function updateRangePair(cat, field, idx, rawValue) {
-    const limitsKey = `${cat}${field.charAt(0).toUpperCase()}${field.slice(1)}`;
-    const [lo, hi] = ABSOLUTE_LIMITS[limitsKey] || [1, 99];
-    const value = clamp(parseInt(rawValue, 10), lo, hi);
-    setDifficultyLabel("custom");
-    setRanges((r) => {
-      const pair = [...r[cat][field]];
-      pair[idx] = value;
-      if (pair[0] > pair[1]) {
-        if (idx === 0) pair[1] = pair[0]; else pair[0] = pair[1];
-      }
-      return { ...r, [cat]: { ...r[cat], [field]: pair } };
-    });
-  }
-
-  function updateSingleValue(cat, field, rawValue) {
-    const limitsKey = `${cat}${field.charAt(0).toUpperCase()}${field.slice(1)}`;
-    const [lo, hi] = ABSOLUTE_LIMITS[limitsKey] || [1, 99];
-    const value = clamp(parseInt(rawValue, 10), lo, hi);
-    setDifficultyLabel("custom");
-    setRanges((r) => ({ ...r, [cat]: { ...r[cat], [field]: value } }));
-  }
+  const applyDifficulty = makeApplyDifficulty(setRanges, setDifficultyLabel);
+  const updateRangePair = makeUpdateRangePair(setRanges, setDifficultyLabel);
+  const updateSingleValue = makeUpdateSingleValue(setRanges, setDifficultyLabel);
 
   // regenerate the question when settings change (category toggle, difficulty,
   // custom ranges, answer mode) — never auto-focus here, this isn't the user
@@ -933,6 +1404,7 @@ export default function BuddhiDrill() {
             {[
               { id: "practice", label: "📖 Practice" },
               { id: "game", label: "🎮 Game" },
+              { id: "battle", label: "⚔️ Battle" },
             ].map((opt) => {
               const on = appMode === opt.id;
               return (
@@ -1292,6 +1764,53 @@ export default function BuddhiDrill() {
           />
         )}
 
+        {appMode === "battle" && (
+          <BattlePanel
+            battleStage={battleStage}
+            setBattleStage={setBattleStage}
+            playerId={playerId}
+            playerName={playerName}
+            setPlayerName={setPlayerName}
+            joinCodeInput={joinCodeInput}
+            setJoinCodeInput={setJoinCodeInput}
+            battleDuration={battleDuration}
+            setBattleDuration={setBattleDuration}
+            battleError={battleError}
+            battleBusy={battleBusy}
+            battleRoom={battleRoom}
+            battleCode={battleCode}
+            battleQuestions={battleQuestions}
+            battleIdx={battleIdx}
+            battleSelected={battleSelected}
+            battleFillValue={battleFillValue}
+            setBattleFillValue={setBattleFillValue}
+            battleFeedback={battleFeedback}
+            battleScore={battleScore}
+            battleTimeLeft={battleTimeLeft}
+            battleCountdown={battleCountdown}
+            battleInputRef={battleInputRef}
+            handleCreateRoom={handleCreateRoom}
+            handleJoinRoom={handleJoinRoom}
+            handleSyncRoomSettings={handleSyncRoomSettings}
+            handleStartBattle={handleStartBattle}
+            handleRematch={handleRematch}
+            handleLeaveRoom={handleLeaveRoom}
+            submitBattleAnswer={submitBattleAnswer}
+            handleBattleFillSubmit={handleBattleFillSubmit}
+            battleActive={battleActive}
+            toggleBattleCategory={toggleBattleCategory}
+            battleRanges={battleRanges}
+            battleAnswerMode={battleAnswerMode}
+            setBattleAnswerMode={setBattleAnswerMode}
+            battleDifficultyLabel={battleDifficultyLabel}
+            applyBattleDifficulty={applyBattleDifficulty}
+            updateBattleRangePair={updateBattleRangePair}
+            updateBattleSingleValue={updateBattleSingleValue}
+            battleShowCustomize={battleShowCustomize}
+            setBattleShowCustomize={setBattleShowCustomize}
+          />
+        )}
+
         {/* HEATMAP */}
         <div style={styles.heatmapSection}>
           <div style={styles.heatmapHeader}>
@@ -1613,6 +2132,492 @@ function GamePanel({
   );
 }
 
+function BattlePanel({
+  battleStage, setBattleStage, playerId, playerName, setPlayerName,
+  joinCodeInput, setJoinCodeInput, battleDuration, setBattleDuration,
+  battleError, battleBusy, battleRoom, battleCode, battleQuestions, battleIdx,
+  battleSelected, battleFillValue, setBattleFillValue, battleFeedback,
+  battleScore, battleTimeLeft, battleCountdown, battleInputRef,
+  handleCreateRoom, handleJoinRoom, handleSyncRoomSettings, handleStartBattle,
+  handleRematch, handleLeaveRoom, submitBattleAnswer, handleBattleFillSubmit,
+  battleActive, toggleBattleCategory, battleRanges, battleAnswerMode, setBattleAnswerMode,
+  battleDifficultyLabel, applyBattleDifficulty, updateBattleRangePair, updateBattleSingleValue,
+  battleShowCustomize, setBattleShowCustomize,
+}) {
+  const players = (battleRoom && battleRoom.players) || {};
+  const playerIds = Object.keys(players);
+  const me = players[playerId];
+  const opponentId = playerIds.find((id) => id !== playerId);
+  const opponent = opponentId ? players[opponentId] : null;
+  const isHost = !!(me && me.isHost) || (battleRoom && battleRoom.hostId === playerId);
+  const roomCatLabels = battleRoom && battleRoom.settings
+    ? battleRoom.settings.categories.map((c) => CATEGORY_META[c].label)
+    : [];
+
+  return (
+    <div style={styles.gamePanel} className="bd-card">
+
+      {battleStage === "menu" && (
+        <>
+          <div style={styles.gameSetupTitle}>⚔️ Battle a friend</div>
+          <div style={styles.battleNameRow}>
+            <span style={styles.rangeLabel}>Your name</span>
+            <input
+              type="text"
+              value={playerName}
+              onChange={(e) => setPlayerName(e.target.value)}
+              placeholder="e.g. Khushal"
+              maxLength={16}
+              style={styles.rangeInput}
+              className="bd-fill-input"
+            />
+          </div>
+          {battleError && <div style={styles.battleError}>{battleError}</div>}
+          <div style={styles.battleMenuBtns}>
+            <button style={styles.gameStartBtn} onClick={() => setBattleStage("create")}>Create Room</button>
+            <button style={styles.battleSecondaryBtn} onClick={() => setBattleStage("join")}>Join Room</button>
+          </div>
+          <div style={styles.gameHint}>Same questions, same order, same timer — whoever gets more right wins.</div>
+        </>
+      )}
+
+      {battleStage === "create" && (
+        <>
+          <div style={styles.gameSetupTitle}>Create a room</div>
+          <div style={styles.battleNameRow}>
+            <span style={styles.rangeLabel}>Your name</span>
+            <input
+              type="text"
+              value={playerName}
+              onChange={(e) => setPlayerName(e.target.value)}
+              placeholder="e.g. Khushal"
+              maxLength={16}
+              style={styles.rangeInput}
+              className="bd-fill-input"
+            />
+          </div>
+
+          <div style={styles.battleSettingsSummary}>
+            <div style={styles.rangeLabel}>Battle settings</div>
+            <SettingsPanel
+              active={battleActive}
+              onToggle={toggleBattleCategory}
+              answerMode={battleAnswerMode}
+              onSetAnswerMode={setBattleAnswerMode}
+              difficultyLabel={battleDifficultyLabel}
+              onApplyDifficulty={applyBattleDifficulty}
+              ranges={battleRanges}
+              onUpdateRangePair={updateBattleRangePair}
+              onUpdateSingleValue={updateBattleSingleValue}
+              showCustomize={battleShowCustomize}
+              onToggleCustomize={() => setBattleShowCustomize((s) => !s)}
+            />
+          </div>
+
+          <div style={styles.gameDurationRow}>
+            <span style={styles.modeLabel}>Battle length:</span>
+            <div style={styles.segmentGroup}>
+              {[30, 60, 90, 120, 180].map((d) => (
+                <button
+                  key={d}
+                  onClick={() => setBattleDuration(d)}
+                  style={{
+                    ...styles.segmentBtn,
+                    background: battleDuration === d ? "#E8B23D" : "transparent",
+                    color: battleDuration === d ? "#0B1929" : "#93A6B8",
+                    fontWeight: battleDuration === d ? 700 : 500,
+                  }}
+                >
+                  {d < 60 ? `${d}s` : `${d / 60}m`}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {battleError && <div style={styles.battleError}>{battleError}</div>}
+          <div style={styles.battleMenuBtns}>
+            <button style={styles.gameStartBtn} disabled={battleBusy} onClick={handleCreateRoom}>
+              {battleBusy ? "Creating…" : "Create Room →"}
+            </button>
+            <button style={styles.linkBtn} onClick={() => setBattleStage("menu")}>← Back</button>
+          </div>
+        </>
+      )}
+
+      {battleStage === "join" && (
+        <>
+          <div style={styles.gameSetupTitle}>Join a room</div>
+          <div style={styles.battleNameRow}>
+            <span style={styles.rangeLabel}>Your name</span>
+            <input
+              type="text"
+              value={playerName}
+              onChange={(e) => setPlayerName(e.target.value)}
+              placeholder="e.g. Khushal"
+              maxLength={16}
+              style={styles.rangeInput}
+              className="bd-fill-input"
+            />
+          </div>
+          <div style={styles.battleNameRow}>
+            <span style={styles.rangeLabel}>Room code</span>
+            <input
+              type="text"
+              value={joinCodeInput}
+              onChange={(e) => setJoinCodeInput(e.target.value.toUpperCase())}
+              placeholder="e.g. K7QXM"
+              maxLength={6}
+              style={{ ...styles.rangeInput, letterSpacing: "0.15em", fontWeight: 700 }}
+              className="bd-fill-input"
+            />
+          </div>
+          {battleError && <div style={styles.battleError}>{battleError}</div>}
+          <div style={styles.battleMenuBtns}>
+            <button style={styles.gameStartBtn} disabled={battleBusy} onClick={handleJoinRoom}>
+              {battleBusy ? "Joining…" : "Join Room →"}
+            </button>
+            <button style={styles.linkBtn} onClick={() => setBattleStage("menu")}>← Back</button>
+          </div>
+        </>
+      )}
+
+      {battleStage === "lobby" && battleRoom && (
+        <>
+          <div style={styles.gameSetupTitle}>Room code</div>
+          <div style={styles.battleCodeDisplay}>{battleCode}</div>
+          <div style={styles.gameHint}>Share this code with your friend — they tap "Join Room" and type it in.</div>
+
+          <div style={styles.battlePlayersRow}>
+            <div style={styles.battlePlayerCard}>
+              <div style={styles.battlePlayerName}>{me ? me.name : playerName || "You"} {isHost && "👑"}</div>
+              <div style={styles.gameHint}>You</div>
+            </div>
+            <div style={styles.battleVs}>VS</div>
+            <div style={styles.battlePlayerCard}>
+              {opponent ? (
+                <>
+                  <div style={styles.battlePlayerName}>{opponent.name} {opponent.isHost && "👑"}</div>
+                  <div style={styles.gameHint}>Ready</div>
+                </>
+              ) : (
+                <div style={styles.gameHint}>Waiting for a friend…</div>
+              )}
+            </div>
+          </div>
+
+          <div style={styles.battleSettingsSummary}>
+            <div style={styles.rangeLabel}>Current room settings</div>
+            <div style={styles.battleTagRow}>
+              {roomCatLabels.map((l) => <span key={l} style={styles.battleTag}>{l}</span>)}
+            </div>
+            <div style={styles.gameHint}>
+              Difficulty: {battleRoom.settings.difficultyLabel} · Mode: {battleRoom.settings.answerMode} · Length: {battleRoom.duration}s
+            </div>
+          </div>
+
+          {isHost ? (
+            <>
+              <div style={styles.battleSettingsSummary}>
+                <div style={styles.rangeLabel}>Edit settings (only you can see this until you update or start)</div>
+                <SettingsPanel
+                  active={battleActive}
+                  onToggle={toggleBattleCategory}
+                  answerMode={battleAnswerMode}
+                  onSetAnswerMode={setBattleAnswerMode}
+                  difficultyLabel={battleDifficultyLabel}
+                  onApplyDifficulty={applyBattleDifficulty}
+                  ranges={battleRanges}
+                  onUpdateRangePair={updateBattleRangePair}
+                  onUpdateSingleValue={updateBattleSingleValue}
+                  showCustomize={battleShowCustomize}
+                  onToggleCustomize={() => setBattleShowCustomize((s) => !s)}
+                />
+              </div>
+              <div style={styles.gameDurationRow}>
+                <span style={styles.modeLabel}>Battle length:</span>
+                <div style={styles.segmentGroup}>
+                  {[30, 60, 90, 120, 180].map((d) => (
+                    <button
+                      key={d}
+                      onClick={() => setBattleDuration(d)}
+                      style={{
+                        ...styles.segmentBtn,
+                        background: battleDuration === d ? "#E8B23D" : "transparent",
+                        color: battleDuration === d ? "#0B1929" : "#93A6B8",
+                        fontWeight: battleDuration === d ? 700 : 500,
+                      }}
+                    >
+                      {d < 60 ? `${d}s` : `${d / 60}m`}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div style={styles.battleMenuBtns}>
+                <button style={styles.battleSecondaryBtn} onClick={handleSyncRoomSettings}>
+                  Update Room (let your friend see these settings now)
+                </button>
+              </div>
+              <button
+                style={{ ...styles.gameStartBtn, opacity: opponent ? 1 : 0.5 }}
+                disabled={!opponent}
+                onClick={handleStartBattle}
+              >
+                {opponent ? "Start Battle →" : "Waiting for a player…"}
+              </button>
+            </>
+          ) : (
+            <div style={{ ...styles.gameHint, textAlign: "center", marginTop: 16 }}>
+              Waiting for the host to start the battle…
+            </div>
+          )}
+
+          <button style={styles.linkBtn} onClick={handleLeaveRoom}>Leave Room</button>
+        </>
+      )}
+
+      {battleStage === "countdown" && (
+        <div style={styles.gameResults}>
+          <div style={styles.gameResultsTitle}>Get ready!</div>
+          <div style={styles.battleCountdownNum}>{battleCountdown || "GO"}</div>
+          <div style={styles.gameHint}>Same questions, same order — go!</div>
+        </div>
+      )}
+
+      {battleStage === "playing" && battleQuestions && (() => {
+        const q = battleQuestions[battleIdx % battleQuestions.length];
+        return (
+          <>
+            <div style={styles.gameTopBar}>
+              <span style={{ ...styles.catPill, background: CATEGORY_META[q.category].ink }}>
+                {CATEGORY_META[q.category].label}
+              </span>
+              <span style={styles.gameTimer}>⏱ {battleTimeLeft}s</span>
+            </div>
+
+            <div style={styles.battleScoreRow}>
+              <div style={styles.battleScoreBox}>
+                <div style={styles.gameHint}>You</div>
+                <div style={styles.battleScoreNum}>{battleScore.correct}</div>
+              </div>
+              <div style={styles.battleScoreBox}>
+                <div style={styles.gameHint}>{opponent ? opponent.name : "Opponent"}</div>
+                <div style={styles.battleScoreNum}>{opponent && opponent.score ? opponent.score.correct : 0}</div>
+              </div>
+            </div>
+
+            <div style={styles.gamePromptText} className="bd-prompt">{q.prompt}</div>
+
+            {q.type === "mcq" ? (
+              <div style={styles.optionsGrid} className="bd-options-grid">
+                {q.options.map((opt, i) => {
+                  const isSelected = battleSelected !== null && String(opt) === String(battleSelected);
+                  const isCorrectOpt = battleFeedback && String(opt) === String(q.answer);
+                  let bg = "#FFFDF7", border = "#D8CFB8", color = "#1F2937";
+                  if (battleFeedback) {
+                    if (isCorrectOpt) { bg = "#E4F0E9"; border = "#1F6F5C"; color = "#1F6F5C"; }
+                    else if (isSelected) { bg = "#F6E4E1"; border = "#C0392B"; color = "#C0392B"; }
+                  }
+                  return (
+                    <button
+                      key={i}
+                      disabled={!!battleFeedback}
+                      onClick={() => submitBattleAnswer(opt)}
+                      style={{ ...styles.optionBtn, background: bg, borderColor: border, color }}
+                    >
+                      {opt}
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <form onSubmit={handleBattleFillSubmit} style={styles.fillRow} className="bd-fill-row">
+                <input
+                  ref={battleInputRef}
+                  type="text"
+                  inputMode={q.inputMode === "text" ? "text" : "decimal"}
+                  value={battleFillValue}
+                  disabled={!!battleFeedback}
+                  onChange={(e) => setBattleFillValue(e.target.value)}
+                  placeholder={q.placeholder || "type your answer"}
+                  className="bd-fill-input"
+                  style={{
+                    ...styles.fillInput,
+                    borderColor: battleFeedback === "correct" ? "#1F6F5C" : battleFeedback === "wrong" ? "#C0392B" : "#B9AE94",
+                  }}
+                />
+                <button type="submit" disabled={!!battleFeedback} style={styles.submitBtn} className="bd-submit-btn">Check</button>
+              </form>
+            )}
+
+            {battleFeedback && (
+              <div style={{
+                ...styles.feedbackBar,
+                background: battleFeedback === "correct" ? "#E4F0E9" : "#F6E4E1",
+                color: battleFeedback === "correct" ? "#1F6F5C" : "#C0392B",
+              }}>
+                {battleFeedback === "correct" ? "✓ Correct" : `✕ answer: ${q.answer}`}
+              </div>
+            )}
+          </>
+        );
+      })()}
+
+      {battleStage === "results" && (
+        <div style={styles.gameResults}>
+          <div style={styles.gameResultsTitle}>⏹ Battle over!</div>
+          <div style={styles.battleResultsRow}>
+            <div style={styles.battleResultBox}>
+              <div style={styles.gameHint}>You</div>
+              <div style={styles.gameResultsScore}>{battleScore.correct}</div>
+            </div>
+            <div style={styles.battleVs}>VS</div>
+            <div style={styles.battleResultBox}>
+              <div style={styles.gameHint}>{opponent ? opponent.name : "Opponent"}</div>
+              <div style={styles.gameResultsScore}>{opponent && opponent.score ? opponent.score.correct : 0}</div>
+            </div>
+          </div>
+
+          {(() => {
+            const oppCorrect = opponent && opponent.score ? opponent.score.correct : 0;
+            if (!opponent) return <div style={styles.gameHint}>Waiting for opponent's final score…</div>;
+            if (battleScore.correct > oppCorrect) return <div style={styles.gameNewBest}>🏆 You win!</div>;
+            if (battleScore.correct < oppCorrect) return <div style={styles.battleLoseText}>{opponent.name} wins this one</div>;
+            return <div style={styles.gameNewBest}>🤝 It's a tie!</div>;
+          })()}
+
+          {opponent && !opponent.finishedAt && (
+            <div style={{ ...styles.gameHint, marginTop: 8 }}>{opponent.name} is still finishing up — score above updates live.</div>
+          )}
+
+          <div style={styles.gameResultsBtns}>
+            {isHost && <button style={styles.gameStartBtn} onClick={handleRematch}>Rematch</button>}
+            <button style={styles.linkBtn} onClick={handleLeaveRoom}>Leave Room</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const RANGE_FIELDS = [
+  { cat: "multiplication", field: "a", label: "Multiplication — 1st number", limitsKey: "multiplicationA" },
+  { cat: "multiplication", field: "b", label: "Multiplication — 2nd number", limitsKey: "multiplicationB" },
+  { cat: "addition", field: "a", label: "Addition — 1st number", limitsKey: "additionA" },
+  { cat: "addition", field: "b", label: "Addition — 2nd number", limitsKey: "additionB" },
+  { cat: "subtraction", field: "a", label: "Subtraction — 1st number", limitsKey: "subtractionA" },
+  { cat: "subtraction", field: "b", label: "Subtraction — 2nd number", limitsKey: "subtractionB" },
+  { cat: "division", field: "divisor", label: "Division — divisor", limitsKey: "divisionDivisor" },
+  { cat: "division", field: "quotient", label: "Division — quotient (the answer)", limitsKey: "divisionQuotient" },
+  { cat: "squares", field: "n", label: "Squares — number range", limitsKey: "squaresN" },
+  { cat: "cubes", field: "n", label: "Cubes — number range", limitsKey: "cubesN" },
+  { cat: "quickpct", field: "mult", label: "Quick % — base number multiplier", limitsKey: "quickpctMult" },
+  { cat: "alphaValue", field: "pos", label: "Alphabet ↔ Number — letter range (A=1 … Z=26)", limitsKey: "alphaValuePos" },
+  { cat: "alphaOpposite", field: "pos", label: "Opposite Letters — letter range", limitsKey: "alphaOppositePos" },
+];
+
+// Shared settings UI — Practice and Battle each pass in their own
+// active/ranges/difficulty/answerMode state + setters, identical controls either way
+function SettingsPanel({
+  active, onToggle, answerMode, onSetAnswerMode,
+  difficultyLabel, onApplyDifficulty, ranges, onUpdateRangePair, onUpdateSingleValue,
+  showCustomize, onToggleCustomize,
+}) {
+  return (
+    <div>
+      <div style={styles.chipsRow}>
+        {CATEGORY_ORDER.map((cat) => {
+          const meta = CATEGORY_META[cat];
+          const on = active[cat];
+          return (
+            <button
+              key={cat}
+              onClick={() => onToggle(cat)}
+              style={{
+                ...styles.chip,
+                borderColor: on ? meta.ink : "#3E566B",
+                background: on ? meta.ink : "transparent",
+                color: on ? "#F4EFE3" : "#7C93A8",
+              }}
+            >
+              <span style={styles.chipTag}>{meta.short}</span> {meta.label}
+            </button>
+          );
+        })}
+      </div>
+
+      <div style={styles.modeRow}>
+        <span style={styles.modeLabel}>Question type:</span>
+        <div style={styles.segmentGroup}>
+          {[{ id: "mixed", label: "Mixed" }, { id: "mcq", label: "MCQ only" }, { id: "fill", label: "Fill in the blank" }].map((opt) => {
+            const on = answerMode === opt.id;
+            return (
+              <button
+                key={opt.id}
+                onClick={() => onSetAnswerMode(opt.id)}
+                style={{ ...styles.segmentBtn, background: on ? "#E8B23D" : "transparent", color: on ? "#0B1929" : "#93A6B8", fontWeight: on ? 700 : 500 }}
+              >
+                {opt.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div style={styles.modeRow}>
+        <span style={styles.modeLabel}>Difficulty:</span>
+        <div style={styles.segmentGroup}>
+          {["easy", "medium", "hard"].map((id) => {
+            const on = difficultyLabel === id;
+            return (
+              <button
+                key={id}
+                onClick={() => onApplyDifficulty(id)}
+                style={{ ...styles.segmentBtn, background: on ? "#E8B23D" : "transparent", color: on ? "#0B1929" : "#93A6B8", fontWeight: on ? 700 : 500 }}
+              >
+                {id[0].toUpperCase() + id.slice(1)}
+              </button>
+            );
+          })}
+          {difficultyLabel === "custom" && (
+            <span style={{ ...styles.segmentBtn, color: "#E8B23D", fontWeight: 700 }}>Custom</span>
+          )}
+        </div>
+        <button onClick={onToggleCustomize} style={{ ...styles.linkBtn, marginLeft: 4 }}>
+          ⚙️ {showCustomize ? "Hide range settings" : "Set your own ranges"}
+        </button>
+      </div>
+
+      {showCustomize && (
+        <div style={styles.customizePanel}>
+          {RANGE_FIELDS.filter((f) => active[f.cat]).map((f) => (
+            <RangeRow
+              key={`${f.cat}-${f.field}`}
+              label={f.label}
+              value={ranges[f.cat][f.field]}
+              onChange={(idx, v) => onUpdateRangePair(f.cat, f.field, idx, v)}
+              limits={ABSOLUTE_LIMITS[f.limitsKey]}
+            />
+          ))}
+          {active.fractions && (
+            <div style={styles.rangeRow}>
+              <span style={styles.rangeLabel}>Fraction ↔ % — max denominator</span>
+              <input
+                type="number"
+                value={ranges.fractions.maxDen}
+                onChange={(e) => onUpdateSingleValue("fractions", "maxDen", e.target.value)}
+                min={ABSOLUTE_LIMITS.fractionsMaxDen[0]}
+                max={ABSOLUTE_LIMITS.fractionsMaxDen[1]}
+                style={styles.rangeInput}
+              />
+            </div>
+          )}
+          <div style={styles.customizeHint}>Bigger numbers and wider ranges = harder mental math. Changing any value switches Difficulty to "Custom".</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function RangeRow({ label, value, onChange, limits }) {
   return (
     <div style={styles.rangeRow}>
@@ -1928,6 +2933,51 @@ const styles = {
   },
   gameResultsRow: { display: "flex", justifyContent: "space-between", borderBottom: "1px dashed #D8CFB8", paddingBottom: 4 },
   gameResultsBtns: { display: "flex", gap: 12, justifyContent: "center", marginTop: 20, flexWrap: "wrap" },
+
+  battleNameRow: {
+    display: "flex", alignItems: "center", justifyContent: "space-between",
+    gap: 12, marginBottom: 12, flexWrap: "wrap",
+  },
+  battleError: {
+    background: "#F6E4E1", color: "#C0392B", borderRadius: 8, padding: "8px 12px",
+    fontSize: 12.5, marginBottom: 12, textAlign: "center",
+  },
+  battleMenuBtns: { display: "flex", flexDirection: "column", gap: 10, marginTop: 14, alignItems: "center" },
+  battleSecondaryBtn: {
+    border: "1.5px solid #1F2937", borderRadius: 999, padding: "11px 26px",
+    background: "transparent", color: "#1F2937", fontWeight: 700, fontSize: 14,
+  },
+  battleSettingsSummary: {
+    background: "rgba(31,41,55,0.04)", borderRadius: 10, padding: "12px 14px", margin: "14px 0",
+  },
+  battleTagRow: { display: "flex", flexWrap: "wrap", gap: 6, margin: "8px 0" },
+  battleTag: {
+    fontSize: 11.5, fontWeight: 600, color: "#1F2937", background: "#E8DFC8",
+    borderRadius: 999, padding: "3px 10px",
+  },
+  battleCodeDisplay: {
+    fontFamily: "'JetBrains Mono', monospace", fontSize: 40, fontWeight: 700,
+    letterSpacing: "0.15em", textAlign: "center", color: "#1F2937", margin: "8px 0 4px",
+  },
+  battlePlayersRow: {
+    display: "flex", alignItems: "center", justifyContent: "center", gap: 16, margin: "18px 0", flexWrap: "wrap",
+  },
+  battlePlayerCard: {
+    flex: "1 1 140px", textAlign: "center", background: "rgba(31,41,55,0.04)",
+    borderRadius: 10, padding: "12px 10px",
+  },
+  battlePlayerName: { fontWeight: 700, color: "#1F2937", fontSize: 14 },
+  battleVs: { fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, color: "#8A7F63", fontSize: 13 },
+  battleCountdownNum: {
+    fontFamily: "'JetBrains Mono', monospace", fontSize: 64, fontWeight: 700,
+    color: "#E8B23D", margin: "14px 0",
+  },
+  battleScoreRow: { display: "flex", justifyContent: "center", gap: 24, margin: "0 0 8px", flexWrap: "wrap" },
+  battleScoreBox: { textAlign: "center" },
+  battleScoreNum: { fontFamily: "'JetBrains Mono', monospace", fontSize: 26, fontWeight: 700, color: "#1F2937" },
+  battleResultsRow: { display: "flex", alignItems: "center", justifyContent: "center", gap: 20, margin: "10px 0", flexWrap: "wrap" },
+  battleResultBox: { textAlign: "center" },
+  battleLoseText: { fontSize: 13, fontWeight: 700, color: "#8A7F63", marginTop: 8 },
 
   paperCard: {
     background: "#F4EFE3",
