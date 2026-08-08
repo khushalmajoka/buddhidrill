@@ -1,9 +1,14 @@
 import { styles } from "../styles";
 
-export default function RangeRow({ label, value, onChange, limits }) {
+export default function RangeRow({ label, value, onChange, limits, light = false }) {
+  const rowStyle = light ? styles.cardRangeRow : styles.rangeRow;
+  const labelStyle = light ? styles.cardLabel : styles.rangeLabel;
+  const inputStyle = light ? styles.cardRangeInput : styles.rangeInput;
+  const dashStyle = light ? styles.cardRangeDash : styles.rangeDash;
+
   return (
-    <div style={styles.rangeRow}>
-      <span style={styles.rangeLabel}>{label}</span>
+    <div style={rowStyle}>
+      <span style={labelStyle}>{label}</span>
       <div style={styles.rangeInputs}>
         <input
           type="number"
@@ -11,16 +16,16 @@ export default function RangeRow({ label, value, onChange, limits }) {
           min={limits[0]}
           max={limits[1]}
           onChange={(e) => onChange(0, e.target.value)}
-          style={styles.rangeInput}
+          style={inputStyle}
         />
-        <span style={styles.rangeDash}>–</span>
+        <span style={dashStyle}>–</span>
         <input
           type="number"
           value={value[1]}
           min={limits[0]}
           max={limits[1]}
           onChange={(e) => onChange(1, e.target.value)}
-          style={styles.rangeInput}
+          style={inputStyle}
         />
       </div>
     </div>

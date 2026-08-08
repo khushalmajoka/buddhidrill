@@ -14,12 +14,16 @@ import {
 } from "./lib/settingsHandlers";
 import { GENERATORS, letterAt } from "./questions/generators";
 import { generateBattleQuestions } from "./battle/battleEngine";
-import { emptyStats, recordAnswer, weightForItem } from "./stats";
+import {
+  emptyStats, recordAnswer, weightForItem, loadHistory, recordDailyHistory,
+} from "./stats";
 import { FONT_IMPORT, GLOBAL_CSS, styles } from "./styles";
 import GamePanel from "./components/GamePanel";
 import BattlePanel from "./components/BattlePanel";
 import RangeRow from "./components/RangeRow";
 import Heatmap from "./components/Heatmap";
+import CategoryPicker from "./components/CategoryPicker";
+import ProgressPanel from "./components/ProgressPanel";
 
 /* ============================================================
    MAIN COMPONENT
@@ -44,6 +48,13 @@ export default function BuddhiDrill() {
   const [session, setSession] = useState({ correct: 0, total: 0, streak: 0, best: 0 });
   const [showHeatmap, setShowHeatmap] = useState(true);
   const [weakMode, setWeakMode] = useState(false);
+  // day-by-day correct/total log (separate from per-item `stats`) — powers
+  // the learning-curve chart on the Progress tab. Shared across Practice,
+  // Game, and Battle, since they all feed the same daily total.
+  const [history, setHistory] = useState(() => loadHistory());
+  const [bestStreakEver, setBestStreakEver] = useState(() => {
+    try { return parseInt(window.localStorage.getItem("buddhidrill-best-streak"), 10) || 0; } catch { return 0; }
+  });
   const inputRef = useRef(null);
   const autoFocusRef = useRef(false);
   const advanceTimerRef = useRef(null);
@@ -62,20 +73,16 @@ export default function BuddhiDrill() {
   const [gameStatus, setGameStatus] = useState("setup"); // 'setup' | 'playing' | 'finished'
   const [gameTimeLeft, setGameTimeLeft] = useState(60);
   const [gameQuestion, setGameQuestion] = useState(null);
-  const [gameSelected, setGameSelected] = useState(null);
   const [gameFillValue, setGameFillValue] = useState("");
-  const [gameFeedback, setGameFeedback] = useState(null);
   const [gameTally, setGameTally] = useState({ correct: 0, wrong: 0, byCat: {} });
   const [gameBest, setGameBest] = useState(0);
   const gameTimerRef = useRef(null);
-  const gameAdvanceRef = useRef(null);
   const gameInputRef = useRef(null);
   const gameQuestionStartRef = useRef(null);
-  const gameFeedbackRef = useRef(null);
   const gameQuestionRef = useRef(null);
   const gameFillValueRef = useRef("");
+  const gameSubmitLockRef = useRef(false); // prevents double-submits since answers now advance instantly
 
-  useEffect(() => { gameFeedbackRef.current = gameFeedback; }, [gameFeedback]);
   useEffect(() => { gameQuestionRef.current = gameQuestion; }, [gameQuestion]);
   useEffect(() => { gameFillValueRef.current = gameFillValue; }, [gameFillValue]);
 
@@ -272,8 +279,13 @@ export default function BuddhiDrill() {
     const nextStats = recordAnswer(stats, question.category, question.key, correct, elapsedMs);
     setStats(nextStats);
     persist(nextStats);
+    setHistory((h) => recordDailyHistory(h, correct));
     setSession((s) => {
       const streak = correct ? s.streak + 1 : 0;
+      if (streak > bestStreakEver) {
+        setBestStreakEver(streak);
+        try { window.localStorage.setItem("buddhidrill-best-streak", String(streak)); } catch { /* ignore */ }
+      }
       return {
         correct: s.correct + (correct ? 1 : 0),
         total: s.total + 1,
@@ -355,9 +367,8 @@ export default function BuddhiDrill() {
     const q = GENERATORS[cat](forceType, ranges);
     gameQuestionStartRef.current = Date.now();
     setGameQuestion(q);
-    setGameSelected(null);
     setGameFillValue("");
-    setGameFeedback(null);
+    gameSubmitLockRef.current = false;
   }
 
   function startGame() {
@@ -381,7 +392,6 @@ export default function BuddhiDrill() {
 
   function endGame() {
     if (gameTimerRef.current) { clearInterval(gameTimerRef.current); gameTimerRef.current = null; }
-    if (gameAdvanceRef.current) { clearTimeout(gameAdvanceRef.current); gameAdvanceRef.current = null; }
     setGameStatus("finished");
     setGameTally((tally) => {
       if (tally.correct > gameBest) {
@@ -392,13 +402,17 @@ export default function BuddhiDrill() {
     });
   }
 
+  // Game Mode never reveals correct/wrong per question — every answer is
+  // recorded and we move straight to the next one, as fast as the player can
+  // go. Results only surface once time runs out (see endGame/GamePanel).
   function submitGameAnswer(userAnswer) {
     const q = gameQuestion;
-    if (!q || gameFeedback || gameStatus !== "playing") return;
+    if (!q || gameStatus !== "playing" || gameSubmitLockRef.current) return;
+    gameSubmitLockRef.current = true;
+
     let correct;
     if (q.type === "mcq") {
       correct = String(userAnswer) === String(q.answer);
-      setGameSelected(userAnswer);
     } else {
       const raw = String(userAnswer).trim();
       if (q.answerIsText) {
@@ -413,12 +427,12 @@ export default function BuddhiDrill() {
         }
       }
     }
-    setGameFeedback(correct ? "correct" : "wrong");
 
     const elapsedMs = gameQuestionStartRef.current ? Date.now() - gameQuestionStartRef.current : 0;
     const nextStats = recordAnswer(stats, q.category, q.key, correct, elapsedMs);
     setStats(nextStats);
     persist(nextStats);
+    setHistory((h) => recordDailyHistory(h, correct));
 
     setGameTally((t) => {
       const byCat = { ...t.byCat };
@@ -427,16 +441,11 @@ export default function BuddhiDrill() {
       return { correct: t.correct + (correct ? 1 : 0), wrong: t.wrong + (correct ? 0 : 1), byCat };
     });
 
-    if (gameAdvanceRef.current) clearTimeout(gameAdvanceRef.current);
-    gameAdvanceRef.current = setTimeout(() => {
-      gameAdvanceRef.current = null;
-      if (gameStatus === "playing") nextGameQuestion();
-    }, correct ? 450 : 900);
+    nextGameQuestion();
   }
 
   function handleGameFillSubmit(e) {
     if (e && e.preventDefault) e.preventDefault();
-    if (gameFeedbackRef.current) return;
     if (gameFillValueRef.current.trim() === "") return;
     submitGameAnswer(gameFillValueRef.current.trim());
   }
@@ -452,7 +461,7 @@ export default function BuddhiDrill() {
       if (appMode !== "game" || gameStatus !== "playing") return;
       if (e.key !== "Enter") return;
       const q = gameQuestionRef.current;
-      if (!q || q.type !== "fill" || gameFeedbackRef.current) return;
+      if (!q || q.type !== "fill") return;
       e.preventDefault();
       handleGameFillSubmit();
     }
@@ -462,7 +471,6 @@ export default function BuddhiDrill() {
 
   useEffect(() => () => {
     if (gameTimerRef.current) clearInterval(gameTimerRef.current);
-    if (gameAdvanceRef.current) clearTimeout(gameAdvanceRef.current);
   }, []);
 
   /* ============================================================
@@ -654,6 +662,7 @@ export default function BuddhiDrill() {
     const nextStats = recordAnswer(stats, q.category, q.key, correct, elapsedMs);
     setStats(nextStats);
     persist(nextStats);
+    setHistory((h) => recordDailyHistory(h, correct));
 
     setBattleScore((s) => {
       const next = { correct: s.correct + (correct ? 1 : 0), wrong: s.wrong + (correct ? 0 : 1) };
@@ -765,6 +774,12 @@ export default function BuddhiDrill() {
     setStats(fresh);
     persist(fresh);
     setSession({ correct: 0, total: 0, streak: 0, best: 0 });
+    setHistory({});
+    setBestStreakEver(0);
+    try {
+      window.localStorage.removeItem("buddhidrill-history");
+      window.localStorage.removeItem("buddhidrill-best-streak");
+    } catch { /* ignore */ }
   }
 
   function toggleCategory(cat) { makeToggleCategory(setActive)(cat); }
@@ -819,6 +834,7 @@ export default function BuddhiDrill() {
               { id: "practice", label: "📖 Practice" },
               { id: "game", label: "🎮 Game" },
               { id: "battle", label: "⚔️ Battle" },
+              { id: "progress", label: "📊 Progress" },
             ].map((opt) => {
               const on = appMode === opt.id;
               return (
@@ -842,30 +858,13 @@ export default function BuddhiDrill() {
         {appMode === "practice" && (
         <>
         {/* CATEGORY TOGGLES */}
-        <div style={styles.chipsRow}>
-          {CATEGORY_ORDER.map((cat) => {
-            const meta = CATEGORY_META[cat];
-            const on = active[cat];
-            return (
-              <button
-                key={cat}
-                onClick={() => toggleCategory(cat)}
-                style={{
-                  ...styles.chip,
-                  borderColor: on ? meta.ink : "#3E566B",
-                  color: on ? "#F4EFE3" : "#7C93A8",
-                  background: on ? meta.ink : "transparent",
-                }}
-              >
-                <span style={styles.chipTag}>{meta.short}</span> {meta.label}
-              </button>
-            );
-          })}
+        <CategoryPicker categories={CATEGORY_ORDER} meta={CATEGORY_META} active={active} onToggle={toggleCategory} />
+
+        <div style={styles.weakModeRow}>
           <button
             onClick={() => setWeakMode((w) => !w)}
             style={{
               ...styles.chip,
-              marginLeft: "auto",
               borderColor: weakMode ? "#E8B23D" : "#3E566B",
               color: weakMode ? "#0B1929" : "#7C93A8",
               background: weakMode ? "#E8B23D" : "transparent",
@@ -1164,10 +1163,8 @@ export default function BuddhiDrill() {
             gameStatus={gameStatus}
             gameTimeLeft={gameTimeLeft}
             gameQuestion={gameQuestion}
-            gameSelected={gameSelected}
             gameFillValue={gameFillValue}
             setGameFillValue={setGameFillValue}
-            gameFeedback={gameFeedback}
             gameTally={gameTally}
             gameBest={gameBest}
             startGame={startGame}
@@ -1225,7 +1222,12 @@ export default function BuddhiDrill() {
           />
         )}
 
+        {appMode === "progress" && (
+          <ProgressPanel stats={stats} history={history} session={session} bestStreakEver={bestStreakEver} />
+        )}
+
         {/* HEATMAP */}
+        {appMode === "practice" && (
         <div style={styles.heatmapSection}>
           <div style={styles.heatmapHeader}>
             <h2 style={styles.heatmapTitle}>Where you stand</h2>
@@ -1334,6 +1336,7 @@ export default function BuddhiDrill() {
             </>
           )}
         </div>
+        )}
 
         {/* COMING SOON TEASER */}
         <div style={styles.comingSoonBox}>

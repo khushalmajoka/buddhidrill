@@ -46,6 +46,88 @@ export function categoryAvgTimeMs(stats, category) {
   return sumTotal > 0 ? sumTime / sumTotal : null;
 }
 
+// aggregate accuracy across every item ever attempted in a category —
+// powers the "accuracy by category" bar chart on the Progress tab
+export function categoryAccuracy(stats, category) {
+  const entries = Object.values(stats[category] || {});
+  let correct = 0, total = 0;
+  for (const e of entries) { correct += e.correct; total += e.total; }
+  return { correct, total, acc: total > 0 ? correct / total : null };
+}
+
+// rolls every category up into one all-time correct/total/avg-time summary —
+// powers the summary cards at the top of the Progress tab
+export function allTimeSummary(stats) {
+  let correct = 0, total = 0, totalTimeMs = 0, timedTotal = 0;
+  for (const cat of Object.keys(stats)) {
+    for (const e of Object.values(stats[cat] || {})) {
+      correct += e.correct;
+      total += e.total;
+      if (e.totalTimeMs) { totalTimeMs += e.totalTimeMs; timedTotal += e.total; }
+    }
+  }
+  return {
+    correct,
+    total,
+    acc: total > 0 ? correct / total : null,
+    avgTimeMs: timedTotal > 0 ? totalTimeMs / timedTotal : null,
+  };
+}
+
+/* ============================================================
+   DAILY HISTORY — a lightweight day-by-day correct/total log, kept
+   separate from the per-item `stats` above. This is what powers the
+   "learning curve" chart: per-item stats can't show trends over time,
+   but a daily rollup can.
+   ============================================================ */
+
+const HISTORY_KEY = "buddhidrill-history";
+const HISTORY_DAYS_KEPT = 60; // trim old entries so localStorage stays small
+
+export function loadHistory() {
+  try {
+    const raw = window.localStorage.getItem(HISTORY_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+export function recordDailyHistory(history, correct) {
+  const day = new Date().toISOString().slice(0, 10);
+  const cur = history[day] || { correct: 0, total: 0 };
+  const next = {
+    ...history,
+    [day]: { correct: cur.correct + (correct ? 1 : 0), total: cur.total + 1 },
+  };
+  const keys = Object.keys(next).sort();
+  if (keys.length > HISTORY_DAYS_KEPT) {
+    for (const k of keys.slice(0, keys.length - HISTORY_DAYS_KEPT)) delete next[k];
+  }
+  try { window.localStorage.setItem(HISTORY_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+  return next;
+}
+
+// returns a fixed-length array (oldest -> newest) even for days with no
+// activity, so the chart always has a consistent x-axis
+export function lastNDays(history, n) {
+  const out = [];
+  const today = new Date();
+  for (let i = n - 1; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    const key = d.toISOString().slice(0, 10);
+    const entry = history[key];
+    out.push({
+      date: key,
+      correct: entry ? entry.correct : 0,
+      total: entry ? entry.total : 0,
+      acc: entry && entry.total > 0 ? entry.correct / entry.total : null,
+    });
+  }
+  return out;
+}
+
 export function weightForItem(stats, category, key) {
   const entry = stats[category] && stats[category][key];
   if (!entry || entry.total === 0) return 3; // unseen items get modest priority

@@ -442,6 +442,156 @@ export const styles = {
     fontWeight: 600,
   },
 
+  /* ============================================================
+     "CARD" (light) CONTEXT TOKENS
+     Game/Battle/Settings panels sit on the cream `.bd-card` background
+     (#F4EFE3), not the dark navy page background — labels, inputs, and
+     segmented controls need their own light-appropriate colors here
+     rather than reusing the dark-page tokens above.
+     ============================================================ */
+  cardLabel: { fontSize: 13, color: "#4B5A6B", fontWeight: 600 },
+  cardModeLabel: { fontSize: 12.5, color: "#5B6B7A", fontWeight: 700 },
+  cardHint: { fontSize: 11.5, color: "#8A7F63", marginTop: 4 },
+
+  cardFieldGroup: { display: "flex", flexDirection: "column", gap: 5, marginBottom: 12, flex: "1 1 200px" },
+  cardFieldRow: { display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 4 },
+  cardTextInput: {
+    width: "100%",
+    boxSizing: "border-box",
+    padding: "10px 12px",
+    borderRadius: 10,
+    border: "1.5px solid #D8CFB8",
+    background: "#FFFDF7",
+    color: "#1F2937",
+    fontFamily: "'JetBrains Mono', monospace",
+    fontSize: 14,
+  },
+
+  cardRangeRow: {
+    display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap",
+  },
+  cardRangeInput: {
+    width: 60,
+    padding: "6px 8px",
+    borderRadius: 8,
+    border: "1.5px solid #D8CFB8",
+    background: "#FFFDF7",
+    color: "#1F2937",
+    fontFamily: "'JetBrains Mono', monospace",
+    fontSize: 13,
+    textAlign: "center",
+  },
+  cardRangeDash: { color: "#8A7F63" },
+  cardCustomizePanel: {
+    background: "rgba(31,41,55,0.04)",
+    border: "1px solid #E3D9BE",
+    borderRadius: 12,
+    padding: "14px 16px",
+    marginBottom: 20,
+    display: "flex",
+    flexDirection: "column",
+    gap: 10,
+  },
+
+  cardSegmentGroup: {
+    display: "flex",
+    border: "1.5px solid #D8CFB8",
+    borderRadius: 999,
+    padding: 3,
+    gap: 2,
+  },
+  cardSegmentBtn: {
+    border: "none",
+    borderRadius: 999,
+    padding: "6px 14px",
+    fontSize: 12.5,
+    background: "transparent",
+    color: "#6B7A89",
+  },
+
+  /* ============================================================
+     CATEGORY PICKER — a scalable grid (not a wrapping pill row) so
+     it stays usable as more drill categories get added over time.
+     Used by Practice (dark), Game & Battle (light).
+     ============================================================ */
+  pickerWrap: { marginBottom: 20 },
+  pickerHeaderRow: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8, gap: 8, flexWrap: "wrap" },
+  weakModeRow: { display: "flex", justifyContent: "flex-end", marginBottom: 20, marginTop: -8 },
+  pickerActionsRow: { display: "flex", gap: 10 },
+  pickerActionBtn: { background: "none", border: "none", fontSize: 12, fontWeight: 600, cursor: "pointer", padding: 0 },
+  pickerGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))",
+    gap: 8,
+  },
+  pickerCard: {
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+    border: "1.5px solid",
+    borderRadius: 10,
+    padding: "9px 12px",
+    fontSize: 13,
+    fontWeight: 600,
+    cursor: "pointer",
+    transition: "all 0.15s ease",
+  },
+  pickerCheck: {
+    width: 16, height: 16, borderRadius: 5, flexShrink: 0,
+    display: "flex", alignItems: "center", justifyContent: "center",
+    fontSize: 11, fontWeight: 700, border: "1.5px solid",
+  },
+  pickerTag: { fontFamily: "'JetBrains Mono', monospace", fontSize: 10.5, opacity: 0.75, marginRight: 2 },
+
+  /* ============================================================
+     PROGRESS TAB — summary cards + accuracy-by-category bar chart +
+     a day-by-day learning-curve chart, all hand-rolled SVG (no chart
+     dependency needed).
+     ============================================================ */
+  progressPanel: {
+    background: "#F4EFE3",
+    borderRadius: 16,
+    padding: "22px 24px 24px",
+    boxShadow: "0 20px 40px -18px rgba(0,0,0,0.55)",
+    marginBottom: 26,
+  },
+  statCardsGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
+    gap: 10,
+    marginBottom: 24,
+  },
+  statCard: {
+    background: "rgba(31,41,55,0.04)",
+    border: "1px solid #E3D9BE",
+    borderRadius: 12,
+    padding: "12px 14px",
+    textAlign: "center",
+  },
+  statCardNum: {
+    fontFamily: "'JetBrains Mono', monospace",
+    fontSize: 24,
+    fontWeight: 700,
+    color: "#1F2937",
+  },
+  statCardLabel: { fontSize: 11, color: "#8A7F63", marginTop: 2, fontWeight: 600 },
+
+  progressSectionTitle: {
+    fontFamily: "'Space Grotesk', sans-serif",
+    fontSize: 15,
+    fontWeight: 700,
+    color: "#1F2937",
+    margin: "22px 0 12px",
+  },
+
+  catBarRow: { display: "flex", alignItems: "center", gap: 10, marginBottom: 9 },
+  catBarLabel: { width: 118, flexShrink: 0, fontSize: 12, fontWeight: 600, color: "#4B5A6B", textAlign: "right" },
+  catBarTrack: { flex: 1, height: 14, borderRadius: 999, background: "rgba(31,41,55,0.08)", overflow: "hidden" },
+  catBarFill: { height: "100%", borderRadius: 999 },
+  catBarPct: { width: 44, flexShrink: 0, fontSize: 11.5, fontFamily: "'JetBrains Mono', monospace", color: "#4B5A6B" },
+
+  learningCurveEmpty: { fontSize: 12.5, color: "#8A7F63", textAlign: "center", padding: "20px 0" },
+
   footer: { textAlign: "center", fontSize: 11.5, color: "#5E7590", marginTop: 30 },
 
   comingSoonBox: {

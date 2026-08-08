@@ -30,15 +30,15 @@ export default function BattlePanel({
       {battleStage === "menu" && (
         <>
           <div style={styles.gameSetupTitle}>⚔️ Battle a friend</div>
-          <div style={styles.battleNameRow}>
-            <span style={styles.rangeLabel}>Your name</span>
+          <div style={styles.cardFieldGroup}>
+            <span style={styles.cardLabel}>Your name</span>
             <input
               type="text"
               value={playerName}
               onChange={(e) => setPlayerName(e.target.value)}
               placeholder="e.g. Khushal"
               maxLength={16}
-              style={styles.rangeInput}
+              style={styles.cardTextInput}
               className="bd-fill-input"
             />
           </div>
@@ -54,21 +54,21 @@ export default function BattlePanel({
       {battleStage === "create" && (
         <>
           <div style={styles.gameSetupTitle}>Create a room</div>
-          <div style={styles.battleNameRow}>
-            <span style={styles.rangeLabel}>Your name</span>
+          <div style={styles.cardFieldGroup}>
+            <span style={styles.cardLabel}>Your name</span>
             <input
               type="text"
               value={playerName}
               onChange={(e) => setPlayerName(e.target.value)}
               placeholder="e.g. Khushal"
               maxLength={16}
-              style={styles.rangeInput}
+              style={styles.cardTextInput}
               className="bd-fill-input"
             />
           </div>
 
           <div style={styles.battleSettingsSummary}>
-            <div style={styles.rangeLabel}>Battle settings</div>
+            <div style={styles.cardLabel}>Battle settings</div>
             <SettingsPanel
               active={battleActive}
               onToggle={toggleBattleCategory}
@@ -85,16 +85,16 @@ export default function BattlePanel({
           </div>
 
           <div style={styles.gameDurationRow}>
-            <span style={styles.modeLabel}>Battle length:</span>
-            <div style={styles.segmentGroup}>
+            <span style={styles.cardModeLabel}>Battle length:</span>
+            <div style={styles.cardSegmentGroup}>
               {[30, 60, 90, 120, 180].map((d) => (
                 <button
                   key={d}
                   onClick={() => setBattleDuration(d)}
                   style={{
-                    ...styles.segmentBtn,
+                    ...styles.cardSegmentBtn,
                     background: battleDuration === d ? "#E8B23D" : "transparent",
-                    color: battleDuration === d ? "#0B1929" : "#93A6B8",
+                    color: battleDuration === d ? "#0B1929" : "#6B7A89",
                     fontWeight: battleDuration === d ? 700 : 500,
                   }}
                 >
@@ -117,29 +117,31 @@ export default function BattlePanel({
       {battleStage === "join" && (
         <>
           <div style={styles.gameSetupTitle}>Join a room</div>
-          <div style={styles.battleNameRow}>
-            <span style={styles.rangeLabel}>Your name</span>
-            <input
-              type="text"
-              value={playerName}
-              onChange={(e) => setPlayerName(e.target.value)}
-              placeholder="e.g. Khushal"
-              maxLength={16}
-              style={styles.rangeInput}
-              className="bd-fill-input"
-            />
-          </div>
-          <div style={styles.battleNameRow}>
-            <span style={styles.rangeLabel}>Room code</span>
-            <input
-              type="text"
-              value={joinCodeInput}
-              onChange={(e) => setJoinCodeInput(e.target.value.toUpperCase())}
-              placeholder="e.g. K7QXM"
-              maxLength={6}
-              style={{ ...styles.rangeInput, letterSpacing: "0.15em", fontWeight: 700 }}
-              className="bd-fill-input"
-            />
+          <div style={styles.cardFieldRow}>
+            <div style={styles.cardFieldGroup}>
+              <span style={styles.cardLabel}>Your name</span>
+              <input
+                type="text"
+                value={playerName}
+                onChange={(e) => setPlayerName(e.target.value)}
+                placeholder="e.g. Khushal"
+                maxLength={16}
+                style={styles.cardTextInput}
+                className="bd-fill-input"
+              />
+            </div>
+            <div style={styles.cardFieldGroup}>
+              <span style={styles.cardLabel}>Room code</span>
+              <input
+                type="text"
+                value={joinCodeInput}
+                onChange={(e) => setJoinCodeInput(e.target.value.toUpperCase())}
+                placeholder="e.g. K7QXM"
+                maxLength={6}
+                style={{ ...styles.cardTextInput, letterSpacing: "0.15em", fontWeight: 700 }}
+                className="bd-fill-input"
+              />
+            </div>
           </div>
           {battleError && <div style={styles.battleError}>{battleError}</div>}
           <div style={styles.battleMenuBtns}>
@@ -176,7 +178,7 @@ export default function BattlePanel({
           </div>
 
           <div style={styles.battleSettingsSummary}>
-            <div style={styles.rangeLabel}>Current room settings</div>
+            <div style={styles.cardLabel}>Current room settings</div>
             <div style={styles.battleTagRow}>
               {roomCatLabels.map((l) => <span key={l} style={styles.battleTag}>{l}</span>)}
             </div>
@@ -188,7 +190,7 @@ export default function BattlePanel({
           {isHost ? (
             <>
               <div style={styles.battleSettingsSummary}>
-                <div style={styles.rangeLabel}>Edit settings (only you can see this until you update or start)</div>
+                <div style={styles.cardLabel}>Edit settings (only you can see this until you update or start)</div>
                 <SettingsPanel
                   active={battleActive}
                   onToggle={toggleBattleCategory}
@@ -204,16 +206,16 @@ export default function BattlePanel({
                 />
               </div>
               <div style={styles.gameDurationRow}>
-                <span style={styles.modeLabel}>Battle length:</span>
-                <div style={styles.segmentGroup}>
+                <span style={styles.cardModeLabel}>Battle length:</span>
+                <div style={styles.cardSegmentGroup}>
                   {[30, 60, 90, 120, 180].map((d) => (
                     <button
                       key={d}
                       onClick={() => setBattleDuration(d)}
                       style={{
-                        ...styles.segmentBtn,
+                        ...styles.cardSegmentBtn,
                         background: battleDuration === d ? "#E8B23D" : "transparent",
-                        color: battleDuration === d ? "#0B1929" : "#93A6B8",
+                        color: battleDuration === d ? "#0B1929" : "#6B7A89",
                         fontWeight: battleDuration === d ? 700 : 500,
                       }}
                     >
