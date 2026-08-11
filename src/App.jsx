@@ -18,12 +18,14 @@ import {
   emptyStats, recordAnswer, weightForItem, loadHistory, recordDailyHistory,
 } from "./stats";
 import { FONT_IMPORT, GLOBAL_CSS, styles } from "./styles";
+import { loadSoundPref, saveSoundPref, playCorrect, playWrong, playTap, playNewBest } from "./lib/sound";
 import GamePanel from "./components/GamePanel";
 import BattlePanel from "./components/BattlePanel";
 import RangeRow from "./components/RangeRow";
 import Heatmap from "./components/Heatmap";
 import CategoryPicker from "./components/CategoryPicker";
 import ProgressPanel from "./components/ProgressPanel";
+import Confetti from "./components/Confetti";
 
 /* ============================================================
    MAIN COMPONENT
@@ -35,8 +37,21 @@ export default function BuddhiDrill() {
   const [active, setActive] = useState({
     multiplication: true, addition: true, subtraction: true, division: true,
     squares: true, cubes: true, fractions: true, quickpct: true,
-    alphaValue: true, alphaOpposite: true,
+    alphaValue: true, alphaOpposite: true, bodmas: true,
   });
+  const [soundOn, setSoundOn] = useState(() => loadSoundPref());
+  const [showConfetti, setShowConfetti] = useState(false);
+  const confettiTimeoutRef = useRef(null);
+  const bestStreakMountedRef = useRef(false);
+
+  function fireConfetti(ms = 1600) {
+    setShowConfetti(true);
+    if (confettiTimeoutRef.current) clearTimeout(confettiTimeoutRef.current);
+    confettiTimeoutRef.current = setTimeout(() => setShowConfetti(false), ms);
+  }
+  function toggleSound() {
+    setSoundOn((s) => { saveSoundPref(!s); return !s; });
+  }
   const [answerMode, setAnswerMode] = useState("mixed"); // 'mixed' | 'mcq' | 'fill'
   const [ranges, setRanges] = useState(DIFFICULTY_PRESETS.medium);
   const [difficultyLabel, setDifficultyLabel] = useState("medium"); // 'easy' | 'medium' | 'hard' | 'custom'
@@ -55,6 +70,15 @@ export default function BuddhiDrill() {
   const [bestStreakEver, setBestStreakEver] = useState(() => {
     try { return parseInt(window.localStorage.getItem("buddhidrill-best-streak"), 10) || 0; } catch { return 0; }
   });
+
+  // confetti + chime whenever bestStreakEver climbs (skip the very first
+  // mount, which just loads whatever was already saved)
+  useEffect(() => {
+    if (!bestStreakMountedRef.current) { bestStreakMountedRef.current = true; return; }
+    fireConfetti();
+    playNewBest(soundOn);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bestStreakEver]);
   const inputRef = useRef(null);
   const autoFocusRef = useRef(false);
   const advanceTimerRef = useRef(null);
@@ -67,14 +91,16 @@ export default function BuddhiDrill() {
   const [appMode, setAppMode] = useState("practice"); // 'practice' | 'game'
   const [gameCats, setGameCats] = useState({
     multiplication: true, addition: true, subtraction: true, division: true, squares: true, cubes: true,
-    alphaValue: true, alphaOpposite: true,
+    alphaValue: true, alphaOpposite: true, bodmas: true,
   });
   const [gameDuration, setGameDuration] = useState(60);
   const [gameStatus, setGameStatus] = useState("setup"); // 'setup' | 'playing' | 'finished'
   const [gameTimeLeft, setGameTimeLeft] = useState(60);
   const [gameQuestion, setGameQuestion] = useState(null);
   const [gameFillValue, setGameFillValue] = useState("");
-  const [gameTally, setGameTally] = useState({ correct: 0, wrong: 0, byCat: {} });
+  const [gameTally, setGameTally] = useState({
+    correct: 0, wrong: 0, byCat: {}, streak: 0, bestStreak: 0, totalTimeMs: 0, timedCount: 0, fastestMs: null,
+  });
   const [gameBest, setGameBest] = useState(0);
   const gameTimerRef = useRef(null);
   const gameInputRef = useRef(null);
@@ -119,7 +145,7 @@ export default function BuddhiDrill() {
   const [battleActive, setBattleActive] = useState({
     multiplication: true, addition: true, subtraction: true, division: true,
     squares: true, cubes: true, fractions: true, quickpct: true,
-    alphaValue: true, alphaOpposite: true,
+    alphaValue: true, alphaOpposite: true, bodmas: true,
   });
   const [battleRanges, setBattleRanges] = useState(DIFFICULTY_PRESETS.medium);
   const [battleDifficultyLabel, setBattleDifficultyLabel] = useState("medium");
@@ -275,6 +301,7 @@ export default function BuddhiDrill() {
       }
     }
     setFeedback(correct ? "correct" : "wrong");
+    if (correct) playCorrect(soundOn); else playWrong(soundOn);
     const elapsedMs = questionStartRef.current ? Date.now() - questionStartRef.current : 0;
     const nextStats = recordAnswer(stats, question.category, question.key, correct, elapsedMs);
     setStats(nextStats);
@@ -374,7 +401,7 @@ export default function BuddhiDrill() {
   function startGame() {
     setGameStatus("playing");
     setGameTimeLeft(gameDuration);
-    setGameTally({ correct: 0, wrong: 0, byCat: {} });
+    setGameTally({ correct: 0, wrong: 0, byCat: {}, streak: 0, bestStreak: 0, totalTimeMs: 0, timedCount: 0, fastestMs: null });
     nextGameQuestion();
     if (gameTimerRef.current) clearInterval(gameTimerRef.current);
     gameTimerRef.current = setInterval(() => {
@@ -394,9 +421,11 @@ export default function BuddhiDrill() {
     if (gameTimerRef.current) { clearInterval(gameTimerRef.current); gameTimerRef.current = null; }
     setGameStatus("finished");
     setGameTally((tally) => {
-      if (tally.correct > gameBest) {
+      if (tally.correct > gameBest && tally.correct > 0) {
         setGameBest(tally.correct);
         try { window.localStorage.setItem(`buddhidrill-highscore-${gameDuration}`, String(tally.correct)); } catch { /* ignore */ }
+        fireConfetti();
+        playNewBest(soundOn);
       }
       return tally;
     });
@@ -428,6 +457,7 @@ export default function BuddhiDrill() {
       }
     }
 
+    playTap(soundOn);
     const elapsedMs = gameQuestionStartRef.current ? Date.now() - gameQuestionStartRef.current : 0;
     const nextStats = recordAnswer(stats, q.category, q.key, correct, elapsedMs);
     setStats(nextStats);
@@ -438,7 +468,18 @@ export default function BuddhiDrill() {
       const byCat = { ...t.byCat };
       const c = byCat[q.category] || { correct: 0, total: 0 };
       byCat[q.category] = { correct: c.correct + (correct ? 1 : 0), total: c.total + 1 };
-      return { correct: t.correct + (correct ? 1 : 0), wrong: t.wrong + (correct ? 0 : 1), byCat };
+      const streak = correct ? t.streak + 1 : 0;
+      const clampedMs = Number.isFinite(elapsedMs) ? Math.max(0, Math.min(elapsedMs, 60000)) : 0;
+      return {
+        correct: t.correct + (correct ? 1 : 0),
+        wrong: t.wrong + (correct ? 0 : 1),
+        byCat,
+        streak,
+        bestStreak: Math.max(t.bestStreak, streak),
+        totalTimeMs: t.totalTimeMs + clampedMs,
+        timedCount: t.timedCount + 1,
+        fastestMs: t.fastestMs === null ? clampedMs : Math.min(t.fastestMs, clampedMs),
+      };
     });
 
     nextGameQuestion();
@@ -657,6 +698,7 @@ export default function BuddhiDrill() {
       }
     }
     setBattleFeedback(correct ? "correct" : "wrong");
+    if (correct) playCorrect(soundOn); else playWrong(soundOn);
 
     const elapsedMs = battleQuestionStartRef.current ? Date.now() - battleQuestionStartRef.current : 0;
     const nextStats = recordAnswer(stats, q.category, q.key, correct, elapsedMs);
@@ -801,6 +843,7 @@ export default function BuddhiDrill() {
   return (
     <div style={styles.page} className="bd-page">
       <style>{FONT_IMPORT + GLOBAL_CSS}</style>
+      {showConfetti && <Confetti />}
 
       <div style={styles.wrap} className="bd-wrap">
         {/* ADMIT-CARD HEADER */}
@@ -823,6 +866,14 @@ export default function BuddhiDrill() {
               <span style={styles.stampLabel}>STREAK</span>
               <span style={styles.stampVal}>{session.streak} <span style={styles.stampSub}>(best {session.best})</span></span>
             </div>
+            <button
+              onClick={toggleSound}
+              style={styles.soundToggleBtn}
+              title={soundOn ? "Mute sound effects" : "Unmute sound effects"}
+              type="button"
+            >
+              {soundOn ? "🔊 Sound on" : "🔇 Sound off"}
+            </button>
           </div>
         </header>
 
@@ -1060,6 +1111,14 @@ export default function BuddhiDrill() {
                 limits={ABSOLUTE_LIMITS.alphaOppositePos}
               />
             )}
+            {active.bodmas && (
+              <RangeRow
+                label="BODMAS — number range"
+                value={ranges.bodmas.n}
+                onChange={(idx, v) => updateRangePair("bodmas", "n", idx, v)}
+                limits={ABSOLUTE_LIMITS.bodmasN}
+              />
+            )}
             <div style={styles.customizeHint}>Bigger numbers and wider ranges = harder mental math. Changing any value switches Difficulty to "Custom".</div>
           </div>
         )}
@@ -1172,6 +1231,7 @@ export default function BuddhiDrill() {
             handleGameFillSubmit={handleGameFillSubmit}
             gameInputRef={gameInputRef}
             setGameStatus={setGameStatus}
+            soundOn={soundOn}
           />
         )}
 
@@ -1219,6 +1279,7 @@ export default function BuddhiDrill() {
             updateBattleSingleValue={updateBattleSingleValue}
             battleShowCustomize={battleShowCustomize}
             setBattleShowCustomize={setBattleShowCustomize}
+            soundOn={soundOn}
           />
         )}
 
@@ -1318,6 +1379,16 @@ export default function BuddhiDrill() {
                   category="alphaOpposite"
                   title={`Opposite Letters (${letterAt(ranges.alphaOpposite.pos[0])}–${letterAt(ranges.alphaOpposite.pos[1])})`}
                   items={range(ranges.alphaOpposite.pos[0], ranges.alphaOpposite.pos[1]).map(letterAt)}
+                  stats={stats}
+                />
+              )}
+              {active.bodmas && (
+                <Heatmap
+                  category="bodmas"
+                  title="BODMAS — by complexity"
+                  items={ranges.bodmas.brackets
+                    ? [`${ranges.bodmas.ops}-op`, `${ranges.bodmas.ops}-op+brackets`]
+                    : [`${ranges.bodmas.ops}-op`]}
                   stats={stats}
                 />
               )}

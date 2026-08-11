@@ -9,7 +9,7 @@ export function emptyStats() {
   return {
     multiplication: {}, addition: {}, subtraction: {}, division: {},
     squares: {}, cubes: {}, fractions: {}, quickpct: {},
-    alphaValue: {}, alphaOpposite: {},
+    alphaValue: {}, alphaOpposite: {}, bodmas: {},
   };
 }
 

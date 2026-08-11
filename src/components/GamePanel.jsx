@@ -1,21 +1,66 @@
+import { useEffect, useRef, useState } from "react";
 import { styles } from "../styles";
 import { CATEGORY_META, GAME_CATEGORY_ORDER } from "../constants";
 import CategoryPicker from "./CategoryPicker";
+import Confetti from "./Confetti";
+import useCountUp from "../lib/useCountUp";
+import { playNewBest } from "../lib/sound";
 
-// Game Mode deliberately never reveals correct/wrong per question — the whole
+function formatTime(ms) {
+  if (ms === null || ms === undefined) return "—";
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  return `${(ms / 1000).toFixed(1)}s`;
+}
+
+function CatResultBar({ cat, v }) {
+  const meta = CATEGORY_META[cat];
+  const pct = v.total > 0 ? Math.round((v.correct / v.total) * 100) : 0;
+  return (
+    <div style={styles.gameResultsCatRow}>
+      <span style={styles.gameResultsCatLabel}>{meta.label}</span>
+      <div style={styles.gameResultsCatTrack}>
+        <div style={{ ...styles.gameResultsCatFill, width: `${pct}%`, background: meta.ink }} />
+      </div>
+      <span style={styles.gameResultsCatNum}>{v.correct}/{v.total}</span>
+    </div>
+  );
+}
+
+// Game Mode never reveals correct/wrong per question — the whole
 // point is answering as fast as possible without a reaction pause. Feedback
 // only ever shows up in the final results screen once time's up.
 export default function GamePanel({
   gameCats, toggleGameCat, gameDuration, setGameDuration, gameStatus, gameTimeLeft,
   gameQuestion, gameFillValue, setGameFillValue, gameTally,
   gameBest, startGame, submitGameAnswer, handleGameFillSubmit, gameInputRef, setGameStatus,
+  soundOn,
 }) {
   const accuracy = gameTally.correct + gameTally.wrong > 0
     ? Math.round((gameTally.correct / (gameTally.correct + gameTally.wrong)) * 100)
     : 0;
+  const avgTimeMs = gameTally.timedCount > 0 ? gameTally.totalTimeMs / gameTally.timedCount : null;
+  const isNewBest = gameTally.correct >= gameBest && gameTally.correct > 0;
+
+  const animatedScore = useCountUp(gameTally.correct, gameStatus === "finished", 750);
+
+  // celebrate a new best exactly once when the results screen first appears
+  const [showLocalConfetti, setShowLocalConfetti] = useState(false);
+  const celebratedRef = useRef(false);
+  useEffect(() => {
+    if (gameStatus !== "finished") { celebratedRef.current = false; return; }
+    if (isNewBest && !celebratedRef.current) {
+      celebratedRef.current = true;
+      setShowLocalConfetti(true);
+      playNewBest(soundOn);
+      const t = setTimeout(() => setShowLocalConfetti(false), 1600);
+      return () => clearTimeout(t);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gameStatus, isNewBest]);
 
   return (
     <div style={styles.gamePanel} className="bd-card">
+      {showLocalConfetti && <Confetti />}
       {gameStatus === "setup" && (
         <>
           <div style={styles.gameSetupTitle}>🎮 Pick your challenge</div>
@@ -93,21 +138,38 @@ export default function GamePanel({
       )}
 
       {gameStatus === "finished" && (
-        <div style={styles.gameResults}>
+        <div style={styles.gameResults} className="bd-pop-in">
           <div style={styles.gameResultsTitle}>⏹ Time's up!</div>
-          <div style={styles.gameResultsScore}>{gameTally.correct} correct</div>
+          <div style={styles.gameResultsScore}>{animatedScore} correct</div>
           <div style={styles.gameResultsSub}>{accuracy}% accuracy · {gameTally.wrong} missed · {gameTally.correct + gameTally.wrong} answered</div>
-          {gameTally.correct >= gameBest && gameTally.correct > 0 && (
+          {isNewBest && (
             <div style={styles.gameNewBest}>🏆 New best!</div>
           )}
-          <div style={styles.gameResultsBreakdown}>
-            {Object.entries(gameTally.byCat).map(([cat, v]) => (
-              <div key={cat} style={styles.gameResultsRow}>
-                <span>{CATEGORY_META[cat].label}</span>
-                <span>{v.correct}/{v.total}</span>
-              </div>
-            ))}
+
+          <div style={styles.gameResultsStatsGrid}>
+            <div style={styles.gameResultsStatCard}>
+              <div style={styles.gameResultsStatNum}>{gameTally.bestStreak}</div>
+              <div style={styles.gameResultsStatLabel}>Best streak this run</div>
+            </div>
+            <div style={styles.gameResultsStatCard}>
+              <div style={styles.gameResultsStatNum}>{formatTime(avgTimeMs)}</div>
+              <div style={styles.gameResultsStatLabel}>Avg. answer time</div>
+            </div>
+            <div style={styles.gameResultsStatCard}>
+              <div style={styles.gameResultsStatNum}>{formatTime(gameTally.fastestMs)}</div>
+              <div style={styles.gameResultsStatLabel}>Fastest answer</div>
+            </div>
           </div>
+
+          {Object.keys(gameTally.byCat).length > 0 && (
+            <div style={styles.gameResultsCatBreakdown}>
+              <div style={styles.progressSectionTitle}>By category</div>
+              {Object.entries(gameTally.byCat).map(([cat, v]) => (
+                <CatResultBar key={cat} cat={cat} v={v} />
+              ))}
+            </div>
+          )}
+
           <div style={styles.gameResultsBtns}>
             <button style={styles.gameStartBtn} onClick={startGame}>Play Again</button>
             <button style={styles.linkBtn} onClick={() => setGameStatus("setup")}>Change Settings</button>

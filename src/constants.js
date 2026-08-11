@@ -26,12 +26,13 @@ export const CATEGORY_META = {
   quickpct: { label: "Quick %", short: "%of", ink: "#8A2B6B" },
   alphaValue: { label: "Alphabet ↔ Number", short: "A1", ink: "#4B8A2B" },
   alphaOpposite: { label: "Opposite Letters", short: "A↔Z", ink: "#2B8A8A" },
+  bodmas: { label: "BODMAS", short: "()×÷", ink: "#6B3FA0" },
 };
 
 export const CATEGORY_ORDER = [
   "multiplication", "addition", "subtraction", "division",
   "squares", "cubes", "fractions", "quickpct",
-  "alphaValue", "alphaOpposite",
+  "alphaValue", "alphaOpposite", "bodmas",
 ];
 
 export const ABSOLUTE_LIMITS = {
@@ -49,6 +50,7 @@ export const ABSOLUTE_LIMITS = {
   quickpctMult: [2, 60],
   alphaValuePos: [1, 26],
   alphaOppositePos: [1, 26],
+  bodmasN: [1, 30],
 };
 
 export const DIFFICULTY_PRESETS = {
@@ -63,6 +65,7 @@ export const DIFFICULTY_PRESETS = {
     quickpct: { mult: [2, 10] },
     alphaValue: { pos: [1, 13] },
     alphaOpposite: { pos: [1, 13] },
+    bodmas: { n: [1, 10], ops: 2, brackets: false },
   },
   medium: {
     multiplication: { a: [2, 20], b: [2, 10] },
@@ -75,6 +78,7 @@ export const DIFFICULTY_PRESETS = {
     quickpct: { mult: [2, 20] },
     alphaValue: { pos: [1, 20] },
     alphaOpposite: { pos: [1, 20] },
+    bodmas: { n: [2, 20], ops: 3, brackets: false },
   },
   hard: {
     multiplication: { a: [11, 25], b: [6, 12] },
@@ -87,11 +91,12 @@ export const DIFFICULTY_PRESETS = {
     quickpct: { mult: [15, 40] },
     alphaValue: { pos: [1, 26] },
     alphaOpposite: { pos: [1, 26] },
+    bodmas: { n: [2, 30], ops: 3, brackets: true },
   },
 };
 
 export const GAME_CATEGORY_ORDER = [
-  "multiplication", "addition", "subtraction", "division", "squares", "cubes", "alphaValue", "alphaOpposite",
+  "multiplication", "addition", "subtraction", "division", "squares", "cubes", "alphaValue", "alphaOpposite", "bodmas",
 ];
 
 // Shared settings UI (Practice + Battle) iterates over this to render each
@@ -110,4 +115,5 @@ export const RANGE_FIELDS = [
   { cat: "quickpct", field: "mult", label: "Quick % — base number multiplier", limitsKey: "quickpctMult" },
   { cat: "alphaValue", field: "pos", label: "Alphabet ↔ Number — letter range (A=1 … Z=26)", limitsKey: "alphaValuePos" },
   { cat: "alphaOpposite", field: "pos", label: "Opposite Letters — letter range", limitsKey: "alphaOppositePos" },
+  { cat: "bodmas", field: "n", label: "BODMAS — number range", limitsKey: "bodmasN" },
 ];

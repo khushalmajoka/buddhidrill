@@ -61,6 +61,24 @@ export const GLOBAL_CSS = `
       grid-template-columns: 1fr !important;
     }
   }
+
+  /* ---- Micro-animations ---- */
+  @keyframes bd-confetti-fall {
+    0% { transform: translate(0, 0) rotate(0deg); opacity: 0.95; }
+    100% { transform: translate(var(--bd-drift, 0px), 110vh) rotate(540deg); opacity: 0; }
+  }
+  @keyframes bd-pop-in {
+    0% { transform: scale(0.7); opacity: 0; }
+    60% { transform: scale(1.08); opacity: 1; }
+    100% { transform: scale(1); opacity: 1; }
+  }
+  .bd-pop-in { animation: bd-pop-in 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+
+  @keyframes bd-pulse-glow {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(232,178,61,0.55); }
+    50% { box-shadow: 0 0 0 10px rgba(232,178,61,0); }
+  }
+  .bd-pulse-glow { animation: bd-pulse-glow 1.1s ease-out 2; }
 `;
 
 export const styles = {
@@ -116,6 +134,17 @@ export const styles = {
   stampLabel: { fontSize: 10, letterSpacing: "0.1em", color: "#93A6B8" },
   stampVal: { fontSize: 14, fontWeight: 700, color: "#F4EFE3" },
   stampSub: { fontSize: 10, color: "#93A6B8", fontWeight: 500 },
+  soundToggleBtn: {
+    marginTop: 4,
+    alignSelf: "flex-start",
+    background: "transparent",
+    border: "1.5px solid #3E566B",
+    borderRadius: 999,
+    padding: "4px 10px",
+    fontSize: 10.5,
+    fontWeight: 600,
+    color: "#93A6B8",
+  },
 
   chipsRow: { display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 20, alignItems: "center" },
   chip: {
@@ -264,6 +293,30 @@ export const styles = {
   },
   gameResultsRow: { display: "flex", justifyContent: "space-between", borderBottom: "1px dashed #D8CFB8", paddingBottom: 4 },
   gameResultsBtns: { display: "flex", gap: 12, justifyContent: "center", marginTop: 20, flexWrap: "wrap" },
+
+  gameResultsStatsGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))",
+    gap: 10,
+    maxWidth: 420,
+    margin: "18px auto 0",
+  },
+  gameResultsStatCard: {
+    background: "rgba(31,41,55,0.04)",
+    border: "1px solid #E3D9BE",
+    borderRadius: 12,
+    padding: "10px 8px",
+    textAlign: "center",
+  },
+  gameResultsStatNum: { fontFamily: "'JetBrains Mono', monospace", fontSize: 18, fontWeight: 700, color: "#1F2937" },
+  gameResultsStatLabel: { fontSize: 10.5, color: "#8A7F63", marginTop: 2, fontWeight: 600 },
+
+  gameResultsCatBreakdown: { maxWidth: 340, margin: "6px auto 0", textAlign: "left" },
+  gameResultsCatRow: { display: "flex", alignItems: "center", gap: 8, marginBottom: 7 },
+  gameResultsCatLabel: { width: 92, flexShrink: 0, fontSize: 11, fontWeight: 600, color: "#4B5A6B", textAlign: "right" },
+  gameResultsCatTrack: { flex: 1, height: 10, borderRadius: 999, background: "rgba(31,41,55,0.08)", overflow: "hidden" },
+  gameResultsCatFill: { height: "100%", borderRadius: 999 },
+  gameResultsCatNum: { width: 40, flexShrink: 0, fontSize: 10.5, fontFamily: "'JetBrains Mono', monospace", color: "#4B5A6B" },
 
   battleNameRow: {
     display: "flex", alignItems: "center", justifyContent: "space-between",
@@ -591,6 +644,17 @@ export const styles = {
   catBarPct: { width: 44, flexShrink: 0, fontSize: 11.5, fontFamily: "'JetBrains Mono', monospace", color: "#4B5A6B" },
 
   learningCurveEmpty: { fontSize: 12.5, color: "#8A7F63", textAlign: "center", padding: "20px 0" },
+
+  /* ---- Streak calendar (contribution heatmap) ---- */
+  streakCalHeader: { display: "flex", alignItems: "baseline", gap: 8, marginBottom: 10, flexWrap: "wrap" },
+  streakCalStreakNum: { fontFamily: "'JetBrains Mono', monospace", fontSize: 16, fontWeight: 700, color: "#1F2937" },
+  streakCalRow: { display: "flex", gap: 6, alignItems: "flex-start" },
+  streakCalDayLabels: { display: "flex", flexDirection: "column", gap: 3, paddingTop: 0, flexShrink: 0 },
+  streakCalDayLabel: { fontSize: 9, color: "#8A7F63", height: 12, lineHeight: "12px", fontFamily: "'JetBrains Mono', monospace" },
+  streakCalScroll: { overflowX: "auto", paddingBottom: 4 },
+  streakCalGrid: { display: "flex", gap: 3 },
+  streakCalCol: { display: "flex", flexDirection: "column", gap: 3 },
+  streakCalCell: { width: 12, height: 12, borderRadius: 3 },
 
   footer: { textAlign: "center", fontSize: 11.5, color: "#5E7590", marginTop: 30 },
 

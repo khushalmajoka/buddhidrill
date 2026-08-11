@@ -239,6 +239,130 @@ export function genAlphaOpposite(forceType, ranges, rng) {
   };
 }
 
+/* ============================================================
+   BODMAS / ORDER OF OPERATIONS
+   A small set of hand-built expression templates rather than a full
+   expression tree — keeps every generated question guaranteed
+   integer, non-negative, and genuinely testing precedence (not just
+   arithmetic). Each template also computes the "naive" left-to-right
+   result, which — when it differs from the correct one — becomes a
+   built-in MCQ distractor for the single most common real mistake.
+   ============================================================ */
+
+// a÷b guaranteed to divide evenly: returns [dividendText, quotientValue]
+function evenDivision(divisorLo, divisorHi, quotientLo, quotientHi, rng) {
+  const divisor = randInt(Math.max(2, divisorLo), Math.max(3, divisorHi), rng);
+  const quotient = randInt(Math.max(2, quotientLo), Math.max(3, quotientHi), rng);
+  return { text: `${divisor * quotient} ÷ ${divisor}`, value: quotient };
+}
+
+export function genBodmas(forceType, ranges, rng) {
+  const r = ranges.bodmas;
+  const [lo, hi] = r.n;
+  const ops = r.ops || 2;
+  const brackets = !!r.brackets;
+  const n = () => randInt(lo, hi, rng);
+
+  let prompt, answer, naive;
+
+  // pool of template builders, chosen based on ops/brackets settings
+  const templates2 = [
+    () => { // a + b × c
+      const a = n(), b = n(), c = n();
+      prompt = `${a} + ${b} × ${c} = ?`;
+      answer = a + b * c;
+      naive = (a + b) * c;
+    },
+    () => { // a × b − c  (kept non-negative: c is drawn small relative to a×b)
+      const a = n(), b = n();
+      const c = randInt(lo, Math.max(lo, a * b), rng);
+      prompt = `${a} × ${b} − ${c} = ?`;
+      answer = a * b - c;
+      naive = a * (b - c);
+    },
+    () => { // a ÷ b + c, using an evenly-divisible pair for a÷b
+      const div = evenDivision(lo, hi, lo, hi, rng);
+      const c = n();
+      prompt = `${div.text} + ${c} = ?`;
+      answer = div.value + c;
+      naive = null; // left-to-right happens to match BODMAS order here (÷ comes first anyway)
+    },
+    () => { // a − b ÷ c
+      const div = evenDivision(lo, hi, lo, hi, rng);
+      const a = randInt(div.value, div.value + Math.max(1, hi), rng);
+      prompt = `${a} − ${div.text} = ?`;
+      answer = a - div.value;
+      naive = null;
+    },
+  ];
+
+  const templates3 = [
+    () => { // a + b × c − d
+      const a = n(), b = n(), c = n();
+      const d = randInt(lo, Math.max(lo, a + b * c), rng);
+      prompt = `${a} + ${b} × ${c} − ${d} = ?`;
+      answer = a + b * c - d;
+      naive = ((a + b) * c) - d;
+    },
+    () => { // a × b − c + d
+      const a = n(), b = n(), d = n();
+      const c = randInt(lo, Math.max(lo, a * b), rng);
+      prompt = `${a} × ${b} − ${c} + ${d} = ?`;
+      answer = a * b - c + d;
+      naive = a * (b - c + d);
+    },
+    () => { // a + (dividend ÷ divisor) − c
+      const div = evenDivision(lo, hi, lo, hi, rng);
+      const a = n();
+      const c = randInt(lo, Math.max(lo, a + div.value), rng);
+      prompt = `${a} + ${div.text} − ${c} = ?`;
+      answer = a + div.value - c;
+      naive = null;
+    },
+  ];
+
+  const templatesBrackets = [
+    () => { // (a + b) × c − d
+      const a = n(), b = n(), c = n();
+      const d = randInt(lo, Math.max(lo, (a + b) * c), rng);
+      prompt = `(${a} + ${b}) × ${c} − ${d} = ?`;
+      answer = (a + b) * c - d;
+      naive = a + b * c - d; // mistake: ignoring the bracket entirely
+    },
+    () => { // a × (b − c) + d, with b >= c so the bracket stays non-negative
+      const a = n(), d = n();
+      const b = n();
+      const c = randInt(lo, b, rng);
+      prompt = `${a} × (${b} − ${c}) + ${d} = ?`;
+      answer = a * (b - c) + d;
+      naive = a * b - c + d; // mistake: ignoring the bracket entirely
+    },
+  ];
+
+  let pool = ops >= 3 ? templates3 : templates2;
+  if (brackets) pool = pool.concat(templatesBrackets);
+  pick(pool, rng)();
+
+  const key = brackets ? `${ops}-op+brackets` : `${ops}-op`;
+  const keyLabel = brackets ? `${ops} steps + brackets` : `${ops} steps`;
+
+  const asMcq = forceType ? forceType === "mcq" : rnd(rng) < 0.6;
+  if (asMcq) {
+    const spread = Math.max(6, Math.round(Math.abs(answer) * 0.25) + 4);
+    const set = new Set([answer]);
+    if (naive !== null && naive !== answer && naive >= 0) set.add(naive);
+    let guard = 0;
+    while (set.size < 4 && guard < 200) {
+      guard++;
+      const cand = answer + (randInt(-spread, spread, rng) || spread);
+      if (cand >= 0 && !set.has(cand)) set.add(cand);
+    }
+    const options = shuffle([...set], rng);
+    return { category: "bodmas", key, keyLabel, prompt, answer, type: "mcq", options };
+  }
+  return { category: "bodmas", key, keyLabel, prompt, answer, type: "fill" };
+}
+
 export const GENERATORS = {
   multiplication: genMultiplication,
   addition: genAddition,
@@ -250,4 +374,5 @@ export const GENERATORS = {
   quickpct: genQuickPct,
   alphaValue: genAlphaValue,
   alphaOpposite: genAlphaOpposite,
+  bodmas: genBodmas,
 };

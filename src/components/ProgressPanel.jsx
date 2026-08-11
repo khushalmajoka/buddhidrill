@@ -1,6 +1,7 @@
 import { styles } from "../styles";
 import { CATEGORY_ORDER, CATEGORY_META } from "../constants";
 import { allTimeSummary, categoryAccuracy, lastNDays } from "../stats";
+import StreakCalendar from "./StreakCalendar";
 
 function formatTime(ms) {
   if (ms === null || ms === undefined) return "—";
@@ -136,6 +137,9 @@ export default function ProgressPanel({ stats, history, session, bestStreakEver 
           <div style={styles.statCardLabel}>Avg. answer time</div>
         </div>
       </div>
+
+      <div style={styles.progressSectionTitle}>Practice streak</div>
+      <StreakCalendar history={history} />
 
       <div style={styles.progressSectionTitle}>Learning curve — last 14 days</div>
       <LearningCurveChart days={days} />

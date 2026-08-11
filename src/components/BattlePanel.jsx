@@ -1,6 +1,10 @@
+import { useEffect, useRef, useState } from "react";
 import { styles } from "../styles";
 import { CATEGORY_META } from "../constants";
 import SettingsPanel from "./SettingsPanel";
+import Confetti from "./Confetti";
+import useCountUp from "../lib/useCountUp";
+import { playVictory } from "../lib/sound";
 
 export default function BattlePanel({
   battleStage, setBattleStage, playerId, playerName, setPlayerName,
@@ -12,7 +16,7 @@ export default function BattlePanel({
   handleRematch, handleLeaveRoom, submitBattleAnswer, handleBattleFillSubmit,
   battleActive, toggleBattleCategory, battleRanges, battleAnswerMode, setBattleAnswerMode,
   battleDifficultyLabel, applyBattleDifficulty, updateBattleRangePair, updateBattleSingleValue,
-  battleShowCustomize, setBattleShowCustomize,
+  battleShowCustomize, setBattleShowCustomize, soundOn,
 }) {
   const players = (battleRoom && battleRoom.players) || {};
   const playerIds = Object.keys(players);
@@ -24,8 +28,30 @@ export default function BattlePanel({
     ? battleRoom.settings.categories.map((c) => CATEGORY_META[c].label)
     : [];
 
+  const oppCorrect = opponent && opponent.score ? opponent.score.correct : 0;
+  const iWon = !!opponent && battleScore.correct > oppCorrect;
+  const animatedMyScore = useCountUp(battleScore.correct, battleStage === "results", 700);
+  const animatedOppScore = useCountUp(oppCorrect, battleStage === "results", 700);
+
+  // fire the victory jingle + confetti exactly once per results screen, and
+  // only once the opponent's final score has actually arrived
+  const [showWinConfetti, setShowWinConfetti] = useState(false);
+  const celebratedRef = useRef(false);
+  useEffect(() => {
+    if (battleStage !== "results") { celebratedRef.current = false; return; }
+    if (iWon && opponent && !celebratedRef.current) {
+      celebratedRef.current = true;
+      setShowWinConfetti(true);
+      playVictory(soundOn);
+      const t = setTimeout(() => setShowWinConfetti(false), 1800);
+      return () => clearTimeout(t);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [battleStage, iWon, !!opponent]);
+
   return (
     <div style={styles.gamePanel} className="bd-card">
+      {showWinConfetti && <Confetti />}
 
       {battleStage === "menu" && (
         <>
@@ -335,27 +361,29 @@ export default function BattlePanel({
       })()}
 
       {battleStage === "results" && (
-        <div style={styles.gameResults}>
+        <div style={styles.gameResults} className="bd-pop-in">
           <div style={styles.gameResultsTitle}>⏹ Battle over!</div>
           <div style={styles.battleResultsRow}>
             <div style={styles.battleResultBox}>
               <div style={styles.gameHint}>You</div>
-              <div style={styles.gameResultsScore}>{battleScore.correct}</div>
+              <div style={styles.gameResultsScore}>{animatedMyScore}</div>
             </div>
             <div style={styles.battleVs}>VS</div>
             <div style={styles.battleResultBox}>
               <div style={styles.gameHint}>{opponent ? opponent.name : "Opponent"}</div>
-              <div style={styles.gameResultsScore}>{opponent && opponent.score ? opponent.score.correct : 0}</div>
+              <div style={styles.gameResultsScore}>{animatedOppScore}</div>
             </div>
           </div>
 
-          {(() => {
-            const oppCorrect = opponent && opponent.score ? opponent.score.correct : 0;
-            if (!opponent) return <div style={styles.gameHint}>Waiting for opponent's final score…</div>;
-            if (battleScore.correct > oppCorrect) return <div style={styles.gameNewBest}>🏆 You win!</div>;
-            if (battleScore.correct < oppCorrect) return <div style={styles.battleLoseText}>{opponent.name} wins this one</div>;
-            return <div style={styles.gameNewBest}>🤝 It's a tie!</div>;
-          })()}
+          {!opponent ? (
+            <div style={styles.gameHint}>Waiting for opponent's final score…</div>
+          ) : iWon ? (
+            <div style={styles.gameNewBest}>🏆 You win!</div>
+          ) : battleScore.correct < oppCorrect ? (
+            <div style={styles.battleLoseText}>{opponent.name} wins this one</div>
+          ) : (
+            <div style={styles.gameNewBest}>🤝 It's a tie!</div>
+          )}
 
           {opponent && !opponent.finishedAt && (
             <div style={{ ...styles.gameHint, marginTop: 8 }}>{opponent.name} is still finishing up — score above updates live.</div>
