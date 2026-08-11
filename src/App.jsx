@@ -15,10 +15,13 @@ import {
 import { GENERATORS, letterAt } from "./questions/generators";
 import { generateBattleQuestions } from "./battle/battleEngine";
 import {
-  emptyStats, recordAnswer, weightForItem, loadHistory, recordDailyHistory,
+  emptyStats, recordAnswer, weightForItem, loadHistory, recordDailyHistory, allTimeSummary,
 } from "./stats";
 import { FONT_IMPORT, GLOBAL_CSS, styles } from "./styles";
 import { loadSoundPref, saveSoundPref, playCorrect, playWrong, playTap, playNewBest } from "./lib/sound";
+import { loadXP, addXP, levelFromXP, levelProgress, xpForAnswer } from "./lib/xp";
+import { loadUnlockedBadges, evaluateBadges, badgeById } from "./lib/badges";
+import { loadThemeId, saveThemeId, getTheme, isThemeUnlocked } from "./lib/themes";
 import GamePanel from "./components/GamePanel";
 import BattlePanel from "./components/BattlePanel";
 import RangeRow from "./components/RangeRow";
@@ -26,6 +29,11 @@ import Heatmap from "./components/Heatmap";
 import CategoryPicker from "./components/CategoryPicker";
 import ProgressPanel from "./components/ProgressPanel";
 import Confetti from "./components/Confetti";
+import XPBar from "./components/XPBar";
+import BadgeUnlockToast from "./components/BadgeUnlockToast";
+import LearnPanel from "./components/LearnPanel";
+import MockTestPanel from "./components/MockTestPanel";
+import BossPanel, { BOSS_DURATION, BOSS_TARGET } from "./components/BossPanel";
 
 /* ============================================================
    MAIN COMPONENT
@@ -70,6 +78,57 @@ export default function BuddhiDrill() {
   const [bestStreakEver, setBestStreakEver] = useState(() => {
     try { return parseInt(window.localStorage.getItem("buddhidrill-best-streak"), 10) || 0; } catch { return 0; }
   });
+
+  // ---- Gamification: XP/levels, badges, cosmetic themes ----
+  const [xp, setXp] = useState(() => loadXP());
+  const [unlockedBadges, setUnlockedBadges] = useState(() => loadUnlockedBadges());
+  const [themeId, setThemeId] = useState(() => loadThemeId());
+  const [badgeToastQueue, setBadgeToastQueue] = useState([]);
+  const theme = getTheme(themeId);
+  const xpProgress = levelProgress(xp);
+
+  function selectTheme(id) {
+    const t = getTheme(id);
+    if (!isThemeUnlocked(t, { level: xpProgress.level, unlockedBadges })) return;
+    setThemeId(id);
+    saveThemeId(id);
+  }
+
+  // grants XP for a correct answer (streak drives the combo multiplier),
+  // celebrating with confetti + a chime whenever it crosses a level
+  const awardXP = useCallback((correct, streak) => {
+    const gained = xpForAnswer(correct, streak);
+    if (gained <= 0) return xp;
+    const result = addXP(xp, gained);
+    setXp(result.xp);
+    if (result.leveledUp) {
+      fireConfetti();
+      playNewBest(soundOn);
+    }
+    return result.xp;
+  }, [xp, soundOn]);
+
+  // re-evaluates every badge against freshly-computed state (so it always
+  // sees this answer's effects, not a stale render's) and queues a toast
+  // for anything newly earned
+  const runBadgeCheck = useCallback((ctx) => {
+    const summary = allTimeSummary(ctx.stats);
+    const result = evaluateBadges({ ...ctx, summary });
+    if (result.newlyUnlocked.length) {
+      setUnlockedBadges(result.unlocked);
+      setBadgeToastQueue((q) => [...q, ...result.newlyUnlocked]);
+      fireConfetti();
+      playNewBest(soundOn);
+    }
+  }, [soundOn]);
+
+  // shows badge-unlock toasts one at a time, ~2.6s each
+  useEffect(() => {
+    if (badgeToastQueue.length === 0) return;
+    const t = setTimeout(() => setBadgeToastQueue((q) => q.slice(1)), 2600);
+    return () => clearTimeout(t);
+  }, [badgeToastQueue]);
+  const currentBadgeToast = badgeToastQueue.length > 0 ? badgeById(badgeToastQueue[0]) : null;
 
   // confetti + chime whenever bestStreakEver climbs (skip the very first
   // mount, which just loads whatever was already saved)
@@ -118,6 +177,265 @@ export default function BuddhiDrill() {
       setGameBest(raw ? parseInt(raw, 10) || 0 : 0);
     } catch { /* ignore */ }
   }, [gameDuration]);
+
+  // ---- Learn Mode state (untimed, reveal-the-answer practice) ----
+  const [learnQuestion, setLearnQuestion] = useState(null);
+  const [learnRevealed, setLearnRevealed] = useState(false);
+
+  function nextLearnQuestion() {
+    const pool = CATEGORY_ORDER.filter((c) => active[c]);
+    if (pool.length === 0) { setLearnQuestion(null); setLearnRevealed(false); return; }
+    const cat = pick(pool);
+    const q = GENERATORS[cat](undefined, ranges);
+    setLearnQuestion(q);
+    setLearnRevealed(false);
+  }
+
+  function revealLearnAnswer() { setLearnRevealed(true); }
+
+  // regenerate the Learn question when its category pool or ranges change
+  // (shares Practice's `active`/`ranges` settings — see LearnPanel)
+  useEffect(() => {
+    if (appMode === "learn") nextLearnQuestion();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appMode, active, ranges]);
+
+  // ---- Mock Test state (fixed-length mixed set, report at the end) ----
+  const [mockCats, setMockCats] = useState({
+    multiplication: true, addition: true, subtraction: true, division: true,
+    squares: true, cubes: true, fractions: true, quickpct: true,
+    alphaValue: true, alphaOpposite: true, bodmas: true,
+  });
+  const [mockLength, setMockLength] = useState(20);
+  const [mockStatus, setMockStatus] = useState("setup"); // 'setup' | 'playing' | 'finished'
+  const [mockIdx, setMockIdx] = useState(0);
+  const [mockQuestion, setMockQuestion] = useState(null);
+  const [mockFillValue, setMockFillValue] = useState("");
+  const [mockTally, setMockTally] = useState({ correct: 0, wrong: 0, byCat: {}, totalTimeMs: 0, timedCount: 0 });
+  const [mockReview, setMockReview] = useState([]);
+  const mockInputRef = useRef(null);
+  const mockQuestionStartRef = useRef(null);
+  const mockFillValueRef = useRef("");
+  const mockSubmitLockRef = useRef(false);
+
+  useEffect(() => { mockFillValueRef.current = mockFillValue; }, [mockFillValue]);
+
+  function toggleMockCat(cat) {
+    setMockCats((c) => {
+      const next = { ...c, [cat]: !c[cat] };
+      if (!Object.values(next).some(Boolean)) return c;
+      return next;
+    });
+  }
+
+  function nextMockQuestion() {
+    const pool = CATEGORY_ORDER.filter((c) => mockCats[c]);
+    const cat = pool.length ? pick(pool) : "multiplication";
+    const q = GENERATORS[cat](undefined, ranges);
+    mockQuestionStartRef.current = Date.now();
+    setMockQuestion(q);
+    setMockFillValue("");
+    mockSubmitLockRef.current = false;
+  }
+
+  function startMockTest() {
+    setMockStatus("playing");
+    setMockIdx(0);
+    setMockTally({ correct: 0, wrong: 0, byCat: {}, totalTimeMs: 0, timedCount: 0 });
+    setMockReview([]);
+    nextMockQuestion();
+  }
+
+  function submitMockAnswer(userAnswer) {
+    const q = mockQuestion;
+    if (!q || mockStatus !== "playing" || mockSubmitLockRef.current) return;
+    mockSubmitLockRef.current = true;
+
+    let correct;
+    if (q.type === "mcq") {
+      correct = String(userAnswer) === String(q.answer);
+    } else {
+      const raw = String(userAnswer).trim();
+      if (q.answerIsText) {
+        const norm = (s) => s.replace(/\s+/g, "").toLowerCase();
+        correct = norm(raw) === norm(String(q.answer));
+      } else {
+        const num = Number(raw);
+        correct = q.tolerance !== undefined
+          ? !Number.isNaN(num) && Math.abs(num - parseFloat(q.answer)) <= q.tolerance
+          : !Number.isNaN(num) && num === q.answer;
+      }
+    }
+
+    playTap(soundOn);
+    const elapsedMs = mockQuestionStartRef.current ? Date.now() - mockQuestionStartRef.current : 0;
+    const nextStats = recordAnswer(stats, q.category, q.key, correct, elapsedMs);
+    setStats(nextStats);
+    persist(nextStats);
+    const nextHistory = recordDailyHistory(history, correct);
+    setHistory(nextHistory);
+
+    const newXP = awardXP(correct, 0);
+    runBadgeCheck({ stats: nextStats, history: nextHistory, bestStreakEver, level: levelFromXP(newXP) });
+
+    setMockReview((r) => [...r, { prompt: q.prompt, userAnswer, correctAnswer: q.answer, correct }]);
+    setMockTally((t) => {
+      const byCat = { ...t.byCat };
+      const c = byCat[q.category] || { correct: 0, total: 0 };
+      byCat[q.category] = { correct: c.correct + (correct ? 1 : 0), total: c.total + 1 };
+      const clampedMs = Number.isFinite(elapsedMs) ? Math.max(0, Math.min(elapsedMs, 60000)) : 0;
+      return {
+        correct: t.correct + (correct ? 1 : 0),
+        wrong: t.wrong + (correct ? 0 : 1),
+        byCat,
+        totalTimeMs: t.totalTimeMs + clampedMs,
+        timedCount: t.timedCount + 1,
+      };
+    });
+
+    const isLast = mockIdx + 1 >= mockLength;
+    if (isLast) {
+      setMockStatus("finished");
+    } else {
+      setMockIdx((i) => i + 1);
+      nextMockQuestion();
+    }
+  }
+
+  function handleMockFillSubmit(e) {
+    if (e && e.preventDefault) e.preventDefault();
+    if (mockFillValueRef.current.trim() === "") return;
+    submitMockAnswer(mockFillValueRef.current.trim());
+  }
+
+  useEffect(() => {
+    if (mockStatus === "playing" && mockQuestion && mockQuestion.type === "fill" && mockInputRef.current) {
+      mockInputRef.current.focus();
+    }
+  }, [mockQuestion, mockStatus]);
+
+  // ---- Boss Level state (one fixed, harder timed challenge) ----
+  const [bossStatus, setBossStatus] = useState("intro"); // 'intro' | 'playing' | 'finished'
+  const [bossTimeLeft, setBossTimeLeft] = useState(BOSS_DURATION);
+  const [bossQuestion, setBossQuestion] = useState(null);
+  const [bossFillValue, setBossFillValue] = useState("");
+  const [bossTally, setBossTally] = useState({ correct: 0, wrong: 0, byCat: {} });
+  const [bossCleared, setBossCleared] = useState(false);
+  const bossTimerRef = useRef(null);
+  const bossInputRef = useRef(null);
+  const bossQuestionRef = useRef(null);
+  const bossFillValueRef = useRef("");
+  const bossSubmitLockRef = useRef(false);
+  const BOSS_RANGES = DIFFICULTY_PRESETS.hard;
+
+  useEffect(() => { bossQuestionRef.current = bossQuestion; }, [bossQuestion]);
+  useEffect(() => { bossFillValueRef.current = bossFillValue; }, [bossFillValue]);
+
+  function nextBossQuestion() {
+    const cat = pick(GAME_CATEGORY_ORDER);
+    const q = GENERATORS[cat](undefined, BOSS_RANGES);
+    setBossQuestion(q);
+    setBossFillValue("");
+    bossSubmitLockRef.current = false;
+  }
+
+  function startBoss() {
+    setBossStatus("playing");
+    setBossTimeLeft(BOSS_DURATION);
+    setBossTally({ correct: 0, wrong: 0, byCat: {} });
+    setBossCleared(false);
+    nextBossQuestion();
+    if (bossTimerRef.current) clearInterval(bossTimerRef.current);
+    bossTimerRef.current = setInterval(() => {
+      setBossTimeLeft((t) => {
+        if (t <= 1) {
+          clearInterval(bossTimerRef.current);
+          bossTimerRef.current = null;
+          endBoss();
+          return 0;
+        }
+        return t - 1;
+      });
+    }, 1000);
+  }
+
+  function endBoss() {
+    if (bossTimerRef.current) { clearInterval(bossTimerRef.current); bossTimerRef.current = null; }
+    setBossStatus("finished");
+    setBossTally((tally) => {
+      const cleared = tally.correct >= BOSS_TARGET;
+      setBossCleared(cleared);
+      if (cleared) {
+        try { window.localStorage.setItem("buddhidrill-boss-cleared", "1"); } catch { /* ignore */ }
+        fireConfetti(2200);
+        playNewBest(soundOn);
+        const newXP = awardXP(true, 0);
+        const bonus = addXP(newXP, 100); // flat bonus on top of the per-answer XP already awarded
+        setXp(bonus.xp);
+        runBadgeCheck({ stats, history, bestStreakEver, level: levelFromXP(bonus.xp) });
+      }
+      return tally;
+    });
+  }
+
+  function submitBossAnswer(userAnswer) {
+    const q = bossQuestionRef.current;
+    if (!q || bossStatus !== "playing" || bossSubmitLockRef.current) return;
+    bossSubmitLockRef.current = true;
+
+    let correct;
+    if (q.type === "mcq") {
+      correct = String(userAnswer) === String(q.answer);
+    } else {
+      const raw = String(userAnswer).trim();
+      if (q.answerIsText) {
+        const norm = (s) => s.replace(/\s+/g, "").toLowerCase();
+        correct = norm(raw) === norm(String(q.answer));
+      } else {
+        const num = Number(raw);
+        correct = q.tolerance !== undefined
+          ? !Number.isNaN(num) && Math.abs(num - parseFloat(q.answer)) <= q.tolerance
+          : !Number.isNaN(num) && num === q.answer;
+      }
+    }
+
+    playTap(soundOn);
+    const nextStats = recordAnswer(stats, q.category, q.key, correct, 0);
+    setStats(nextStats);
+    persist(nextStats);
+    const nextHistory = recordDailyHistory(history, correct);
+    setHistory(nextHistory);
+    awardXP(correct, 0);
+
+    setBossTally((t) => {
+      const byCat = { ...t.byCat };
+      const c = byCat[q.category] || { correct: 0, total: 0 };
+      byCat[q.category] = { correct: c.correct + (correct ? 1 : 0), total: c.total + 1 };
+      return {
+        correct: t.correct + (correct ? 1 : 0),
+        wrong: t.wrong + (correct ? 0 : 1),
+        byCat,
+      };
+    });
+
+    nextBossQuestion();
+  }
+
+  function handleBossFillSubmit(e) {
+    if (e && e.preventDefault) e.preventDefault();
+    if (bossFillValueRef.current.trim() === "") return;
+    submitBossAnswer(bossFillValueRef.current.trim());
+  }
+
+  useEffect(() => {
+    if (bossStatus === "playing" && bossQuestion && bossQuestion.type === "fill" && bossInputRef.current) {
+      bossInputRef.current.focus();
+    }
+  }, [bossQuestion, bossStatus]);
+
+  useEffect(() => () => {
+    if (bossTimerRef.current) clearInterval(bossTimerRef.current);
+  }, []);
 
   // ---- Battle mode state ----
   const [battleStage, setBattleStage] = useState("menu"); // menu | create | join | lobby | countdown | playing | results
@@ -306,19 +624,26 @@ export default function BuddhiDrill() {
     const nextStats = recordAnswer(stats, question.category, question.key, correct, elapsedMs);
     setStats(nextStats);
     persist(nextStats);
-    setHistory((h) => recordDailyHistory(h, correct));
-    setSession((s) => {
-      const streak = correct ? s.streak + 1 : 0;
-      if (streak > bestStreakEver) {
-        setBestStreakEver(streak);
-        try { window.localStorage.setItem("buddhidrill-best-streak", String(streak)); } catch { /* ignore */ }
-      }
-      return {
-        correct: s.correct + (correct ? 1 : 0),
-        total: s.total + 1,
-        streak,
-        best: Math.max(s.best, streak),
-      };
+    const nextHistory = recordDailyHistory(history, correct);
+    setHistory(nextHistory);
+
+    const newStreak = correct ? session.streak + 1 : 0;
+    let newBestStreakEver = bestStreakEver;
+    if (newStreak > bestStreakEver) {
+      newBestStreakEver = newStreak;
+      setBestStreakEver(newStreak);
+      try { window.localStorage.setItem("buddhidrill-best-streak", String(newStreak)); } catch { /* ignore */ }
+    }
+    setSession((s) => ({
+      correct: s.correct + (correct ? 1 : 0),
+      total: s.total + 1,
+      streak: newStreak,
+      best: Math.max(s.best, newStreak),
+    }));
+
+    const newXP = awardXP(correct, newStreak);
+    runBadgeCheck({
+      stats: nextStats, history: nextHistory, bestStreakEver: newBestStreakEver, level: levelFromXP(newXP),
     });
 
     // correct answers auto-advance after a short beat; wrong answers wait for Enter
@@ -429,6 +754,7 @@ export default function BuddhiDrill() {
       }
       return tally;
     });
+    runBadgeCheck({ stats, history, bestStreakEver, level: xpProgress.level });
   }
 
   // Game Mode never reveals correct/wrong per question — every answer is
@@ -462,7 +788,14 @@ export default function BuddhiDrill() {
     const nextStats = recordAnswer(stats, q.category, q.key, correct, elapsedMs);
     setStats(nextStats);
     persist(nextStats);
-    setHistory((h) => recordDailyHistory(h, correct));
+    const nextHistory = recordDailyHistory(history, correct);
+    setHistory(nextHistory);
+
+    const newStreak = correct ? gameTally.streak + 1 : 0;
+    const newXP = awardXP(correct, newStreak);
+    runBadgeCheck({
+      stats: nextStats, history: nextHistory, bestStreakEver, level: levelFromXP(newXP),
+    });
 
     setGameTally((t) => {
       const byCat = { ...t.byCat };
@@ -704,7 +1037,13 @@ export default function BuddhiDrill() {
     const nextStats = recordAnswer(stats, q.category, q.key, correct, elapsedMs);
     setStats(nextStats);
     persist(nextStats);
-    setHistory((h) => recordDailyHistory(h, correct));
+    const nextHistory = recordDailyHistory(history, correct);
+    setHistory(nextHistory);
+
+    const newXP = awardXP(correct, 0); // Battle doesn't track a live streak yet, so no combo bonus here
+    runBadgeCheck({
+      stats: nextStats, history: nextHistory, bestStreakEver, level: levelFromXP(newXP),
+    });
 
     setBattleScore((s) => {
       const next = { correct: s.correct + (correct ? 1 : 0), wrong: s.wrong + (correct ? 0 : 1) };
@@ -818,9 +1157,17 @@ export default function BuddhiDrill() {
     setSession({ correct: 0, total: 0, streak: 0, best: 0 });
     setHistory({});
     setBestStreakEver(0);
+    setXp(0);
+    setUnlockedBadges([]);
+    setThemeId("classic");
+    setBossCleared(false);
     try {
       window.localStorage.removeItem("buddhidrill-history");
       window.localStorage.removeItem("buddhidrill-best-streak");
+      window.localStorage.removeItem("buddhidrill-xp");
+      window.localStorage.removeItem("buddhidrill-badges");
+      window.localStorage.removeItem("buddhidrill-theme");
+      window.localStorage.removeItem("buddhidrill-boss-cleared");
     } catch { /* ignore */ }
   }
 
@@ -841,9 +1188,10 @@ export default function BuddhiDrill() {
   const accuracyPct = session.total > 0 ? Math.round((session.correct / session.total) * 100) : 0;
 
   return (
-    <div style={styles.page} className="bd-page">
+    <div style={{ ...styles.page, background: theme.bg, "--bd-accent": theme.accent }} className="bd-page">
       <style>{FONT_IMPORT + GLOBAL_CSS}</style>
       {showConfetti && <Confetti />}
+      {currentBadgeToast && <BadgeUnlockToast badge={currentBadgeToast} />}
 
       <div style={styles.wrap} className="bd-wrap">
         {/* ADMIT-CARD HEADER */}
@@ -866,6 +1214,7 @@ export default function BuddhiDrill() {
               <span style={styles.stampLabel}>STREAK</span>
               <span style={styles.stampVal}>{session.streak} <span style={styles.stampSub}>(best {session.best})</span></span>
             </div>
+            <XPBar level={xpProgress.level} into={xpProgress.into} need={xpProgress.need} pct={xpProgress.pct} />
             <button
               onClick={toggleSound}
               style={styles.soundToggleBtn}
@@ -883,6 +1232,9 @@ export default function BuddhiDrill() {
           <div style={styles.segmentGroup}>
             {[
               { id: "practice", label: "📖 Practice" },
+              { id: "learn", label: "🧠 Learn" },
+              { id: "mocktest", label: "📝 Mock Test" },
+              { id: "boss", label: "🐉 Boss" },
               { id: "game", label: "🎮 Game" },
               { id: "battle", label: "⚔️ Battle" },
               { id: "progress", label: "📊 Progress" },
@@ -1213,6 +1565,54 @@ export default function BuddhiDrill() {
         </>
         )}
 
+        {appMode === "learn" && (
+          <LearnPanel
+            active={active}
+            toggleCategory={toggleCategory}
+            learnQuestion={learnQuestion}
+            learnRevealed={learnRevealed}
+            revealLearnAnswer={revealLearnAnswer}
+            nextLearnQuestion={nextLearnQuestion}
+          />
+        )}
+
+        {appMode === "mocktest" && (
+          <MockTestPanel
+            mockCats={mockCats}
+            toggleMockCat={toggleMockCat}
+            mockLength={mockLength}
+            setMockLength={setMockLength}
+            mockStatus={mockStatus}
+            setMockStatus={setMockStatus}
+            mockIdx={mockIdx}
+            mockQuestion={mockQuestion}
+            mockFillValue={mockFillValue}
+            setMockFillValue={setMockFillValue}
+            mockTally={mockTally}
+            mockReview={mockReview}
+            startMockTest={startMockTest}
+            submitMockAnswer={submitMockAnswer}
+            handleMockFillSubmit={handleMockFillSubmit}
+            mockInputRef={mockInputRef}
+          />
+        )}
+
+        {appMode === "boss" && (
+          <BossPanel
+            bossStatus={bossStatus}
+            bossTimeLeft={bossTimeLeft}
+            bossQuestion={bossQuestion}
+            bossFillValue={bossFillValue}
+            setBossFillValue={setBossFillValue}
+            bossTally={bossTally}
+            bossCleared={bossCleared}
+            startBoss={startBoss}
+            submitBossAnswer={submitBossAnswer}
+            handleBossFillSubmit={handleBossFillSubmit}
+            bossInputRef={bossInputRef}
+          />
+        )}
+
         {appMode === "game" && (
           <GamePanel
             gameCats={gameCats}
@@ -1284,7 +1684,16 @@ export default function BuddhiDrill() {
         )}
 
         {appMode === "progress" && (
-          <ProgressPanel stats={stats} history={history} session={session} bestStreakEver={bestStreakEver} />
+          <ProgressPanel
+            stats={stats}
+            history={history}
+            session={session}
+            bestStreakEver={bestStreakEver}
+            xpProgress={xpProgress}
+            unlockedBadges={unlockedBadges}
+            themeId={themeId}
+            setTheme={selectTheme}
+          />
         )}
 
         {/* HEATMAP */}

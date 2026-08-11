@@ -106,7 +106,7 @@ export const styles = {
     fontFamily: "'JetBrains Mono', monospace",
     fontSize: 11,
     letterSpacing: "0.18em",
-    color: "#E8B23D",
+    color: "var(--bd-accent, #E8B23D)",
     marginBottom: 6,
     fontWeight: 600,
   },
@@ -121,7 +121,7 @@ export const styles = {
   subtitle: { fontSize: 13, color: "#93A6B8", marginTop: 6 },
 
   stampBox: {
-    border: "2px solid #E8B23D",
+    border: "2px solid var(--bd-accent, #E8B23D)",
     borderRadius: 10,
     padding: "10px 16px",
     background: "rgba(232,178,61,0.06)",
@@ -457,7 +457,7 @@ export const styles = {
   heatmapSection: { marginTop: 6 },
   heatmapHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 },
   heatmapTitle: { fontFamily: "'Space Grotesk', sans-serif", fontSize: 20, fontWeight: 700, color: "#F4EFE3", margin: 0 },
-  linkBtn: { background: "none", border: "none", color: "#E8B23D", fontWeight: 600, fontSize: 13 },
+  linkBtn: { background: "none", border: "none", color: "var(--bd-accent, #E8B23D)", fontWeight: 600, fontSize: 13 },
 
   heatBlock: {
     background: "rgba(255,255,255,0.03)",
@@ -673,5 +673,127 @@ export const styles = {
     border: "1px solid #33465B",
     borderRadius: 999,
     padding: "4px 12px",
+  },
+
+  /* ============================================================
+     GAMIFICATION — XP bar (header), badge-unlock toast, badge grid
+     and theme picker (Progress tab)
+     ============================================================ */
+  xpBarWrap: { marginTop: 6, display: "flex", flexDirection: "column", gap: 3 },
+  xpBarTopRow: { display: "flex", justifyContent: "space-between", gap: 10, fontFamily: "'JetBrains Mono', monospace" },
+  xpBarLevel: { fontSize: 10.5, fontWeight: 700, color: "var(--bd-accent, #E8B23D)", letterSpacing: "0.05em" },
+  xpBarNums: { fontSize: 10, color: "#93A6B8" },
+  xpBarTrack: { height: 6, borderRadius: 999, background: "rgba(255,255,255,0.08)", overflow: "hidden" },
+  xpBarFill: {
+    height: "100%",
+    borderRadius: 999,
+    background: "var(--bd-accent, #E8B23D)",
+    transition: "width 0.5s cubic-bezier(0.34, 1.56, 0.64, 1)",
+  },
+
+  badgeToast: {
+    position: "fixed",
+    top: 18,
+    right: 18,
+    zIndex: 50,
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+    background: "#F4EFE3",
+    border: "2px solid var(--bd-accent, #E8B23D)",
+    borderRadius: 14,
+    padding: "10px 16px",
+    boxShadow: "0 16px 32px -12px rgba(0,0,0,0.55)",
+    maxWidth: "calc(100vw - 36px)",
+  },
+  badgeToastIcon: { fontSize: 26 },
+  badgeToastTitle: { fontSize: 10.5, fontWeight: 700, color: "#8A7F63", letterSpacing: "0.06em" },
+  badgeToastLabel: { fontSize: 14.5, fontWeight: 700, color: "#1F2937" },
+
+  badgeGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))",
+    gap: 10,
+    marginBottom: 6,
+  },
+  badgeCard: {
+    background: "rgba(31,41,55,0.04)",
+    border: "1px solid #E3D9BE",
+    borderRadius: 12,
+    padding: "12px 10px",
+    textAlign: "center",
+  },
+  badgeCardIcon: { fontSize: 26, marginBottom: 4 },
+  badgeCardLabel: { fontSize: 12, fontWeight: 700, color: "#1F2937" },
+  badgeCardDesc: { fontSize: 10.5, color: "#8A7F63", marginTop: 3, lineHeight: 1.35 },
+
+  themeGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))",
+    gap: 10,
+  },
+  themeSwatch: {
+    border: "2px solid",
+    borderRadius: 12,
+    padding: "12px 12px 10px",
+    textAlign: "left",
+    display: "flex",
+    flexDirection: "column",
+    gap: 4,
+    minHeight: 64,
+  },
+  themeSwatchDot: { width: 14, height: 14, borderRadius: "50%", display: "block" },
+  themeSwatchLabel: { fontSize: 12.5, fontWeight: 700, color: "#F4EFE3" },
+  themeSwatchLock: { fontSize: 10, color: "#C6BFAA" },
+  themeSwatchSelected: {
+    fontSize: 9.5, fontWeight: 700, letterSpacing: "0.06em", color: "#0B1929",
+    background: "#F4EFE3", borderRadius: 999, padding: "2px 8px", alignSelf: "flex-start",
+  },
+
+  /* ---- Learn Mode ---- */
+  learnExplainBox: {
+    background: "rgba(31,111,92,0.08)",
+    border: "1px solid #BFE0D3",
+    borderRadius: 12,
+    padding: "14px 16px",
+    fontSize: 14,
+    lineHeight: 1.5,
+    color: "#1F2937",
+    margin: "10px 0",
+  },
+
+  /* ---- Mock Test ---- */
+  mockReviewList: { display: "flex", flexDirection: "column", gap: 8, marginTop: 10 },
+  mockReviewRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+    padding: "8px 10px",
+    borderRadius: 10,
+    background: "rgba(31,41,55,0.03)",
+  },
+  mockReviewIcon: { fontSize: 15, width: 18, textAlign: "center", flexShrink: 0 },
+  mockReviewPrompt: { flex: 1, fontSize: 12.5, color: "#1F2937" },
+  mockReviewAnswer: { fontSize: 11.5, fontFamily: "'JetBrains Mono', monospace", color: "#6B7A89", flexShrink: 0 },
+  mockProgressLabel: { fontSize: 12.5, color: "#8A7F63", fontFamily: "'JetBrains Mono', monospace" },
+
+  /* ---- Boss Level ---- */
+  bossIntroTitle: {
+    fontFamily: "'Space Grotesk', sans-serif",
+    fontSize: 22,
+    fontWeight: 700,
+    color: "#1F2937",
+    textAlign: "center",
+    marginBottom: 8,
+  },
+  bossIntroHint: { textAlign: "center", fontSize: 13, color: "#8A7F63", marginBottom: 6, lineHeight: 1.5 },
+  bossTargetLine: { textAlign: "center", fontSize: 13.5, fontWeight: 700, color: "#8A4B2B", marginBottom: 18 },
+  bossResultBanner: {
+    textAlign: "center",
+    fontSize: 17,
+    fontWeight: 700,
+    borderRadius: 12,
+    padding: "12px 16px",
+    margin: "10px 0 18px",
   },
 };

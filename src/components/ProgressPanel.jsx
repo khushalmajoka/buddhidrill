@@ -2,6 +2,7 @@ import { styles } from "../styles";
 import { CATEGORY_ORDER, CATEGORY_META } from "../constants";
 import { allTimeSummary, categoryAccuracy, lastNDays } from "../stats";
 import StreakCalendar from "./StreakCalendar";
+import BadgesPanel from "./BadgesPanel";
 
 function formatTime(ms) {
   if (ms === null || ms === undefined) return "—";
@@ -103,7 +104,9 @@ function CategoryBar({ cat, entry }) {
   );
 }
 
-export default function ProgressPanel({ stats, history, session, bestStreakEver }) {
+export default function ProgressPanel({
+  stats, history, session, bestStreakEver, xpProgress, unlockedBadges, themeId, setTheme,
+}) {
   const summary = allTimeSummary(stats);
   const days = lastNDays(history, 14);
 
@@ -136,6 +139,12 @@ export default function ProgressPanel({ stats, history, session, bestStreakEver 
           <div style={styles.statCardNum}>{formatTime(summary.avgTimeMs)}</div>
           <div style={styles.statCardLabel}>Avg. answer time</div>
         </div>
+        {xpProgress && (
+          <div style={styles.statCard}>
+            <div style={styles.statCardNum}>Lv {xpProgress.level}</div>
+            <div style={styles.statCardLabel}>{xpProgress.xp} XP total</div>
+          </div>
+        )}
       </div>
 
       <div style={styles.progressSectionTitle}>Practice streak</div>
@@ -150,6 +159,15 @@ export default function ProgressPanel({ stats, history, session, bestStreakEver 
         <div style={styles.learningCurveEmpty}>Answer a few questions in any category and your breakdown shows up here.</div>
       ) : (
         categoriesWithData.map(({ cat, entry }) => <CategoryBar key={cat} cat={cat} entry={entry} />)
+      )}
+
+      {xpProgress && (
+        <BadgesPanel
+          unlockedBadges={unlockedBadges}
+          level={xpProgress.level}
+          themeId={themeId}
+          setTheme={setTheme}
+        />
       )}
     </div>
   );
