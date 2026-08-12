@@ -12,6 +12,24 @@ export const GLOBAL_CSS = `
   button { cursor: pointer; font-family: inherit; }
   button:disabled { cursor: default; }
 
+  /* ---- Segmented control / tab-bar overflow guard ----
+     Several controls (mode nav, duration pickers, difficulty toggles) are
+     single-row flex "pills" sized by their content. With enough options
+     (e.g. the 7-item mode nav) they're wider than a phone screen — this
+     turns them into a horizontally-scrollable strip instead of blowing
+     out the page width and forcing the whole app to scroll sideways. */
+  .bd-segment-scroll {
+    overflow-x: auto;
+    max-width: 100%;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .bd-segment-scroll::-webkit-scrollbar { display: none; }
+  .bd-segment-scroll > button,
+  .bd-segment-scroll > span {
+    flex-shrink: 0;
+  }
+
   /* ---- Mobile responsiveness ---- */
   @media (max-width: 640px) {
     .bd-page { padding: 18px 10px 44px !important; }
@@ -53,6 +71,15 @@ export const GLOBAL_CSS = `
     }
     .bd-submit-btn {
       width: 100% !important;
+    }
+
+    /* comfortable tap targets on touchscreens (44px is the usual iOS/Android
+       guideline) — bump the compact desktop padding up a little */
+    .bd-segment-scroll > button {
+      padding: 9px 15px !important;
+    }
+    .bd-tap-target {
+      min-height: 44px !important;
     }
   }
 
@@ -202,7 +229,7 @@ export const styles = {
     background: "#0F2033",
     color: "#F4EFE3",
     fontFamily: "'JetBrains Mono', monospace",
-    fontSize: 13,
+    fontSize: 16,
     textAlign: "center",
   },
   rangeDash: { color: "#5E7590" },
@@ -326,6 +353,11 @@ export const styles = {
     background: "#F6E4E1", color: "#C0392B", borderRadius: 8, padding: "8px 12px",
     fontSize: 12.5, marginBottom: 12, textAlign: "center",
   },
+  battleDisconnectBanner: {
+    background: "#FCF1DA", color: "#9A6B1B", border: "1.5px solid #E8B23D",
+    borderRadius: 10, padding: "9px 12px", fontSize: 12.5, marginBottom: 14,
+    textAlign: "center", fontWeight: 600,
+  },
   battleMenuBtns: { display: "flex", flexDirection: "column", gap: 10, marginTop: 14, alignItems: "center" },
   battleSecondaryBtn: {
     border: "1.5px solid #1F2937", borderRadius: 999, padding: "11px 26px",
@@ -340,7 +372,7 @@ export const styles = {
     borderRadius: 999, padding: "3px 10px",
   },
   battleCodeDisplay: {
-    fontFamily: "'JetBrains Mono', monospace", fontSize: 40, fontWeight: 700,
+    fontFamily: "'JetBrains Mono', monospace", fontSize: "clamp(28px, 9vw, 40px)", fontWeight: 700,
     letterSpacing: "0.15em", textAlign: "center", color: "#1F2937", margin: "8px 0 4px",
   },
   battlePlayersRow: {
@@ -353,7 +385,7 @@ export const styles = {
   battlePlayerName: { fontWeight: 700, color: "#1F2937", fontSize: 14 },
   battleVs: { fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, color: "#8A7F63", fontSize: 13 },
   battleCountdownNum: {
-    fontFamily: "'JetBrains Mono', monospace", fontSize: 64, fontWeight: 700,
+    fontFamily: "'JetBrains Mono', monospace", fontSize: "clamp(40px, 16vw, 64px)", fontWeight: 700,
     color: "#E8B23D", margin: "14px 0",
   },
   battleScoreRow: { display: "flex", justifyContent: "center", gap: 24, margin: "0 0 8px", flexWrap: "wrap" },
@@ -494,6 +526,35 @@ export const styles = {
     fontSize: 12.5,
     fontWeight: 600,
   },
+  resetConfirmBox: {
+    maxWidth: 360,
+    margin: "0 auto",
+    background: "rgba(192,57,43,0.06)",
+    border: "1.5px solid #C0392B",
+    borderRadius: 14,
+    padding: "14px 16px",
+    textAlign: "center",
+  },
+  resetConfirmText: { fontSize: 12.5, color: "#8A7F63", lineHeight: 1.5, marginBottom: 12 },
+  resetConfirmBtns: { display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" },
+  resetConfirmCancelBtn: {
+    border: "1.5px solid #3E566B",
+    background: "transparent",
+    color: "#5B6B7A",
+    borderRadius: 999,
+    padding: "8px 16px",
+    fontSize: 12.5,
+    fontWeight: 600,
+  },
+  resetConfirmYesBtn: {
+    border: "none",
+    background: "#C0392B",
+    color: "#FFF8F2",
+    borderRadius: 999,
+    padding: "8px 16px",
+    fontSize: 12.5,
+    fontWeight: 700,
+  },
 
   /* ============================================================
      "CARD" (light) CONTEXT TOKENS
@@ -517,7 +578,7 @@ export const styles = {
     background: "#FFFDF7",
     color: "#1F2937",
     fontFamily: "'JetBrains Mono', monospace",
-    fontSize: 14,
+    fontSize: 16,
   },
 
   cardRangeRow: {
@@ -531,7 +592,7 @@ export const styles = {
     background: "#FFFDF7",
     color: "#1F2937",
     fontFamily: "'JetBrains Mono', monospace",
-    fontSize: 13,
+    fontSize: 16,
     textAlign: "center",
   },
   cardRangeDash: { color: "#8A7F63" },

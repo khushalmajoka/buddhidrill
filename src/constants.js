@@ -3,6 +3,15 @@
    across Practice, Game, and Battle modes.
    ============================================================ */
 
+// How long (ms) to wait after the host's connection drops before treating
+// the room as abandoned and letting the opponent clean it up. Long enough
+// to ride out a wifi blip or a phone briefly locking, short enough that
+// nobody's stuck waiting forever. This MUST match the value baked into the
+// Firebase Realtime Database rules (see the rules snippet in the setup
+// notes) — the client only ever *shows*/*requests* the cleanup, the rules
+// are what actually enforce the grace period server-side.
+export const HOST_DISCONNECT_GRACE_MS = 90 * 1000;
+
 export const FRACTIONS = [
   [1, 2], [1, 3], [2, 3], [1, 4], [3, 4], [1, 5], [2, 5], [3, 5], [4, 5],
   [1, 6], [5, 6], [1, 7], [1, 8], [3, 8], [5, 8], [7, 8], [1, 9], [2, 9],

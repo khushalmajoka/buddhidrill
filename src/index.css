@@ -11,4 +11,6 @@ html, body, #root {
 
 body {
   min-height: 100vh;
+  overflow-x: hidden; /* safety net: no single element should ever be able to
+                          force the whole page to scroll sideways on mobile */
 }

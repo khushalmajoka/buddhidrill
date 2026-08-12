@@ -24,8 +24,8 @@ export default function BattlePanel({
   const opponentId = playerIds.find((id) => id !== playerId);
   const opponent = opponentId ? players[opponentId] : null;
   const isHost = !!(me && me.isHost) || (battleRoom && battleRoom.hostId === playerId);
-  const roomCatLabels = battleRoom && battleRoom.settings
-    ? battleRoom.settings.categories.map((c) => CATEGORY_META[c].label)
+  const roomCatLabels = battleRoom && battleRoom.settings && Array.isArray(battleRoom.settings.categories)
+    ? battleRoom.settings.categories.filter((c) => CATEGORY_META[c]).map((c) => CATEGORY_META[c].label)
     : [];
 
   const oppCorrect = opponent && opponent.score ? opponent.score.correct : 0;
@@ -49,9 +49,18 @@ export default function BattlePanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [battleStage, iWon, !!opponent]);
 
+  const hostDisconnected = !isHost && !!(battleRoom && battleRoom.hostDisconnectedAt)
+    && ["lobby", "countdown", "playing"].includes(battleStage);
+
   return (
     <div style={styles.gamePanel} className="bd-card">
       {showWinConfetti && <Confetti />}
+
+      {hostDisconnected && (
+        <div style={styles.battleDisconnectBanner} className="bd-pop-in">
+          ⚠️ {opponent ? opponent.name : "Your opponent"}'s connection dropped — waiting to see if they reconnect…
+        </div>
+      )}
 
       {battleStage === "menu" && (
         <>
@@ -112,7 +121,7 @@ export default function BattlePanel({
 
           <div style={styles.gameDurationRow}>
             <span style={styles.cardModeLabel}>Battle length:</span>
-            <div style={styles.cardSegmentGroup}>
+            <div style={styles.cardSegmentGroup} className="bd-segment-scroll">
               {[30, 60, 90, 120, 180].map((d) => (
                 <button
                   key={d}
@@ -161,7 +170,7 @@ export default function BattlePanel({
               <input
                 type="text"
                 value={joinCodeInput}
-                onChange={(e) => setJoinCodeInput(e.target.value.toUpperCase())}
+                onChange={(e) => setJoinCodeInput(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))}
                 placeholder="e.g. K7QXM"
                 maxLength={6}
                 style={{ ...styles.cardTextInput, letterSpacing: "0.15em", fontWeight: 700 }}
@@ -233,7 +242,7 @@ export default function BattlePanel({
               </div>
               <div style={styles.gameDurationRow}>
                 <span style={styles.cardModeLabel}>Battle length:</span>
-                <div style={styles.cardSegmentGroup}>
+                <div style={styles.cardSegmentGroup} className="bd-segment-scroll">
                   {[30, 60, 90, 120, 180].map((d) => (
                     <button
                       key={d}

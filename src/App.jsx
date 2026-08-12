@@ -1,12 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
-  ref, set, get, update, remove, onValue, onDisconnect,
+  ref, set, get, update, remove, onValue, onDisconnect, serverTimestamp,
 } from "firebase/database";
 
-import { getFirebaseDb, newRoomCode, newPlayerId } from "./firebase";
+import { getFirebaseDb, newRoomCode, ensureFirebaseAuth } from "./firebase";
 import {
   FRACTIONS, QUICK_PCT, CATEGORY_META, CATEGORY_ORDER,
-  ABSOLUTE_LIMITS, DIFFICULTY_PRESETS, GAME_CATEGORY_ORDER,
+  ABSOLUTE_LIMITS, DIFFICULTY_PRESETS, GAME_CATEGORY_ORDER, HOST_DISCONNECT_GRACE_MS,
 } from "./constants";
 import { pctLabel, pick, bucketItemsForRange, range, colorForAcc } from "./lib/mathUtils";
 import {
@@ -49,6 +49,7 @@ export default function BuddhiDrill() {
   });
   const [soundOn, setSoundOn] = useState(() => loadSoundPref());
   const [showConfetti, setShowConfetti] = useState(false);
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
   const confettiTimeoutRef = useRef(null);
   const bestStreakMountedRef = useRef(false);
 
@@ -439,7 +440,7 @@ export default function BuddhiDrill() {
 
   // ---- Battle mode state ----
   const [battleStage, setBattleStage] = useState("menu"); // menu | create | join | lobby | countdown | playing | results
-  const [playerId] = useState(() => newPlayerId());
+  const [playerId, setPlayerId] = useState(null); // resolved from Firebase Anonymous Auth right before create/join
   const [playerName, setPlayerName] = useState(() => {
     try { return window.localStorage.getItem("buddhidrill-name") || ""; } catch { return ""; }
   });
@@ -491,6 +492,9 @@ export default function BuddhiDrill() {
   const battleQuestionStartRef = useRef(null);
   const battleStartedSeedRef = useRef(null);
   const battleInputRef = useRef(null);
+  const battleRoomRef = useRef(null);
+  const battleAbandonCheckRef = useRef(null); // interval id for the opponent-side grace-period watch
+  const battleAbandonHandledRef = useRef(false); // guards against double-triggering the cleanup
 
   useEffect(() => { battleStageRef.current = battleStage; }, [battleStage]);
   useEffect(() => { battleCodeRef.current = battleCode; }, [battleCode]);
@@ -498,6 +502,12 @@ export default function BuddhiDrill() {
   useEffect(() => { battleIdxRef.current = battleIdx; }, [battleIdx]);
   useEffect(() => { battleFeedbackRef.current = battleFeedback; }, [battleFeedback]);
   useEffect(() => { battleFillValueRef.current = battleFillValue; }, [battleFillValue]);
+  useEffect(() => { battleRoomRef.current = battleRoom; }, [battleRoom]);
+
+  function clearAbandonWatch() {
+    if (battleAbandonCheckRef.current) { clearInterval(battleAbandonCheckRef.current); battleAbandonCheckRef.current = null; }
+    battleAbandonHandledRef.current = false;
+  }
 
   // clean up any live listener/timers if the whole app unmounts
   useEffect(() => () => {
@@ -505,7 +515,28 @@ export default function BuddhiDrill() {
     if (battleTimerRef.current) clearInterval(battleTimerRef.current);
     if (battleAdvanceRef.current) clearTimeout(battleAdvanceRef.current);
     if (battleCountdownTimerRef.current) clearTimeout(battleCountdownTimerRef.current);
+    clearAbandonWatch();
   }, []);
+
+  // Host side: while the host device is connected, keep the room's
+  // "hostDisconnectedAt" marker clear, and (re-)arm the onDisconnect
+  // handlers whenever the connection is (re-)established. Firebase forgets
+  // onDisconnect registrations across a full reconnect (new session), not
+  // just a brief in-session hiccup, so this has to re-run on every
+  // reconnect, not just once when the room is created.
+  useEffect(() => {
+    const db = getFirebaseDb();
+    if (!db || !battleCode) return;
+    const unsub = onValue(ref(db, ".info/connected"), (snap) => {
+      if (snap.val() !== true) return;
+      const room = battleRoomRef.current;
+      if (!room || room.hostId !== playerId) return;
+      set(ref(db, `rooms/${battleCode}/hostDisconnectedAt`), null).catch(() => {});
+      onDisconnect(ref(db, `rooms/${battleCode}/hostDisconnectedAt`)).set(serverTimestamp());
+      onDisconnect(ref(db, `rooms/${battleCode}/players/${playerId}`)).remove();
+    });
+    return () => unsub();
+  }, [battleCode, playerId]);
 
   useEffect(() => { feedbackRef.current = feedback; }, [feedback]);
   useEffect(() => { questionRef.current = question; }, [question]);
@@ -855,6 +886,7 @@ export default function BuddhiDrill() {
     const db = getFirebaseDb();
     if (!db) return;
     if (battleUnsubRef.current) battleUnsubRef.current();
+    clearAbandonWatch();
     const roomRef = ref(db, `rooms/${code}`);
     battleUnsubRef.current = onValue(roomRef, (snap) => {
       const val = snap.exists() ? snap.val() : null;
@@ -885,17 +917,49 @@ export default function BuddhiDrill() {
           update(ref(db, `rooms/${code}`), { status: "finished" }).catch(() => {});
         }
       }
+
+      // Opponent side: if the host's connection has been down for longer
+      // than the grace period, treat the room as abandoned and clean it
+      // up. A short blip won't reach this — the host's own reconnect
+      // effect clears the marker as soon as it's back online, well before
+      // the grace window elapses.
+      const amHost = val.hostId === playerId;
+      if (!amHost && val.hostDisconnectedAt) {
+        if (!battleAbandonCheckRef.current) {
+          battleAbandonCheckRef.current = setInterval(() => {
+            const room = battleRoomRef.current;
+            if (!room || !room.hostDisconnectedAt) { clearAbandonWatch(); return; }
+            const elapsed = Date.now() - room.hostDisconnectedAt;
+            if (elapsed > HOST_DISCONNECT_GRACE_MS && !battleAbandonHandledRef.current) {
+              battleAbandonHandledRef.current = true;
+              clearAbandonWatch();
+              remove(ref(db, `rooms/${code}`)).catch(() => {});
+              if (battleUnsubRef.current) { battleUnsubRef.current(); battleUnsubRef.current = null; }
+              setBattleRoom(null);
+              setBattleCode("");
+              setBattleQuestions(null);
+              setBattleError("Your opponent lost connection, so the room was closed.");
+              setBattleStage("menu");
+            }
+          }, 5000);
+        }
+      } else if (battleAbandonCheckRef.current) {
+        clearAbandonWatch();
+      }
     });
   }
 
   async function handleCreateRoom() {
     const db = getFirebaseDb();
     if (!db) { setBattleError("Battle Mode isn't configured yet — see the Firebase setup notes."); return; }
-    const name = playerName.trim() || "Player 1";
+    const name = playerName.trim().slice(0, 16) || "Player 1";
     try { window.localStorage.setItem("buddhidrill-name", name); } catch { /* ignore */ }
     setBattleError("");
     setBattleBusy(true);
     try {
+      const uid = await ensureFirebaseAuth();
+      if (!uid) { setBattleError("Couldn't verify your device for Battle Mode. Check your connection and try again."); setBattleBusy(false); return; }
+      setPlayerId(uid);
       let code = newRoomCode();
       for (let tries = 0; tries < 5; tries++) {
         const snap = await get(ref(db, `rooms/${code}`));
@@ -907,17 +971,19 @@ export default function BuddhiDrill() {
         code,
         createdAt: Date.now(),
         status: "waiting",
-        hostId: playerId,
+        hostId: uid,
+        hostDisconnectedAt: null,
         duration: battleDuration,
         settings: { categories: activeCats, ranges: battleRanges, answerMode: battleAnswerMode, difficultyLabel: battleDifficultyLabel },
         seed: null,
         startAt: null,
         players: {
-          [playerId]: { name, isHost: true, score: { correct: 0, wrong: 0 }, finishedAt: null, joinedAt: Date.now() },
+          [uid]: { name, isHost: true, score: { correct: 0, wrong: 0 }, finishedAt: null, joinedAt: Date.now() },
         },
       };
       await set(ref(db, `rooms/${code}`), roomData);
-      onDisconnect(ref(db, `rooms/${code}/players/${playerId}`)).remove();
+      onDisconnect(ref(db, `rooms/${code}/players/${uid}`)).remove();
+      onDisconnect(ref(db, `rooms/${code}/hostDisconnectedAt`)).set(serverTimestamp());
       setBattleCode(code);
       subscribeToRoom(code);
       setBattleStage("lobby");
@@ -931,13 +997,16 @@ export default function BuddhiDrill() {
   async function handleJoinRoom() {
     const db = getFirebaseDb();
     if (!db) { setBattleError("Battle Mode isn't configured yet — see the Firebase setup notes."); return; }
-    const code = joinCodeInput.trim().toUpperCase();
+    const code = joinCodeInput.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
     if (code.length < 4) { setBattleError("Enter the room code your friend shared with you."); return; }
-    const name = playerName.trim() || "Player 2";
+    const name = playerName.trim().slice(0, 16) || "Player 2";
     try { window.localStorage.setItem("buddhidrill-name", name); } catch { /* ignore */ }
     setBattleError("");
     setBattleBusy(true);
     try {
+      const uid = await ensureFirebaseAuth();
+      if (!uid) { setBattleError("Couldn't verify your device for Battle Mode. Check your connection and try again."); setBattleBusy(false); return; }
+      setPlayerId(uid);
       const snap = await get(ref(db, `rooms/${code}`));
       if (!snap.exists()) { setBattleError("No room found with that code."); setBattleBusy(false); return; }
       const room = snap.val();
@@ -945,10 +1014,10 @@ export default function BuddhiDrill() {
       const existingCount = room.players ? Object.keys(room.players).length : 0;
       if (existingCount >= 2) { setBattleError("That room is already full."); setBattleBusy(false); return; }
 
-      await update(ref(db, `rooms/${code}/players/${playerId}`), {
+      await update(ref(db, `rooms/${code}/players/${uid}`), {
         name, isHost: false, score: { correct: 0, wrong: 0 }, finishedAt: null, joinedAt: Date.now(),
       });
-      onDisconnect(ref(db, `rooms/${code}/players/${playerId}`)).remove();
+      onDisconnect(ref(db, `rooms/${code}/players/${uid}`)).remove();
       setBattleCode(code);
       subscribeToRoom(code);
       setBattleStage("lobby");
@@ -1134,8 +1203,15 @@ export default function BuddhiDrill() {
     if (battleTimerRef.current) { clearInterval(battleTimerRef.current); battleTimerRef.current = null; }
     if (battleAdvanceRef.current) { clearTimeout(battleAdvanceRef.current); battleAdvanceRef.current = null; }
     if (battleCountdownTimerRef.current) { clearTimeout(battleCountdownTimerRef.current); battleCountdownTimerRef.current = null; }
+    clearAbandonWatch();
     const db = getFirebaseDb();
     if (db && battleCode) {
+      // cancel any pending onDisconnect ops for this device — we're leaving
+      // on purpose right now, so we don't want a deferred one firing later
+      // (e.g. re-creating a stray hostDisconnectedAt node under an
+      // already-deleted room)
+      onDisconnect(ref(db, `rooms/${battleCode}/players/${playerId}`)).cancel().catch(() => {});
+      onDisconnect(ref(db, `rooms/${battleCode}/hostDisconnectedAt`)).cancel().catch(() => {});
       if (battleRoom && battleRoom.hostId === playerId) {
         remove(ref(db, `rooms/${battleCode}`)).catch(() => {});
       } else {
@@ -1161,6 +1237,7 @@ export default function BuddhiDrill() {
     setUnlockedBadges([]);
     setThemeId("classic");
     setBossCleared(false);
+    setGameBest(0);
     try {
       window.localStorage.removeItem("buddhidrill-history");
       window.localStorage.removeItem("buddhidrill-best-streak");
@@ -1168,7 +1245,21 @@ export default function BuddhiDrill() {
       window.localStorage.removeItem("buddhidrill-badges");
       window.localStorage.removeItem("buddhidrill-theme");
       window.localStorage.removeItem("buddhidrill-boss-cleared");
+      // sweep every per-duration Game Mode high score (buddhidrill-highscore-30,
+      // -60, -90, ...) instead of hardcoding durations, so this stays correct
+      // if more durations get added later
+      const keysToRemove = [];
+      for (let i = 0; i < window.localStorage.length; i++) {
+        const k = window.localStorage.key(i);
+        if (k && k.startsWith("buddhidrill-highscore-")) keysToRemove.push(k);
+      }
+      keysToRemove.forEach((k) => window.localStorage.removeItem(k));
     } catch { /* ignore */ }
+  }
+
+  function confirmReset() {
+    handleReset();
+    setShowResetConfirm(false);
   }
 
   function toggleCategory(cat) { makeToggleCategory(setActive)(cat); }
@@ -1229,7 +1320,7 @@ export default function BuddhiDrill() {
         {/* APP MODE: PRACTICE VS GAME */}
         <div style={styles.modeRow}>
           <span style={styles.modeLabel}>Mode:</span>
-          <div style={styles.segmentGroup}>
+          <div style={styles.segmentGroup} className="bd-segment-scroll">
             {[
               { id: "practice", label: "📖 Practice" },
               { id: "learn", label: "🧠 Learn" },
@@ -1243,7 +1334,7 @@ export default function BuddhiDrill() {
               return (
                 <button
                   key={opt.id}
-                  onClick={() => setAppMode(opt.id)}
+                  onClick={() => { setAppMode(opt.id); setShowResetConfirm(false); }}
                   style={{
                     ...styles.segmentBtn,
                     background: on ? "#E8B23D" : "transparent",
@@ -1282,7 +1373,7 @@ export default function BuddhiDrill() {
         {/* ANSWER MODE TOGGLE */}
         <div style={styles.modeRow}>
           <span style={styles.modeLabel}>Question type:</span>
-          <div style={styles.segmentGroup}>
+          <div style={styles.segmentGroup} className="bd-segment-scroll">
             {[
               { id: "mixed", label: "Mixed" },
               { id: "mcq", label: "MCQ only" },
@@ -1310,7 +1401,7 @@ export default function BuddhiDrill() {
         {/* DIFFICULTY + CUSTOM RANGE */}
         <div style={styles.modeRow}>
           <span style={styles.modeLabel}>Difficulty:</span>
-          <div style={styles.segmentGroup}>
+          <div style={styles.segmentGroup} className="bd-segment-scroll">
             {[
               { id: "easy", label: "Easy" },
               { id: "medium", label: "Medium" },
@@ -1812,7 +1903,19 @@ export default function BuddhiDrill() {
                 <span style={styles.legendLabel}>not attempted</span>
               </div>
 
-              <button style={styles.resetBtn} onClick={handleReset}>Reset all progress</button>
+              {!showResetConfirm ? (
+                <button style={styles.resetBtn} onClick={() => setShowResetConfirm(true)}>Reset all progress</button>
+              ) : (
+                <div style={styles.resetConfirmBox} className="bd-pop-in">
+                  <div style={styles.resetConfirmText}>
+                    This permanently erases everything on this device — stats, streaks, XP &amp; level, badges, high scores, and your theme. This can't be undone.
+                  </div>
+                  <div style={styles.resetConfirmBtns}>
+                    <button style={styles.resetConfirmCancelBtn} onClick={() => setShowResetConfirm(false)}>Cancel</button>
+                    <button style={styles.resetConfirmYesBtn} onClick={confirmReset}>Yes, erase everything</button>
+                  </div>
+                </div>
+              )}
             </>
           )}
         </div>
