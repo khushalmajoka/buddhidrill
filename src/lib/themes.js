@@ -8,6 +8,8 @@
    selected/active controls.
    ============================================================ */
 
+import { badgeById } from "./badges";
+
 export const THEMES = [
   {
     id: "classic", icon: "🌌", label: "Classic Navy",
@@ -39,6 +41,42 @@ export const THEMES = [
     bg: "radial-gradient(1200px 600px at 10% -10%, #3D3016 0%, #1F1A08 55%, #141105 100%)",
     unlockBadge: "level_20",
   },
+  {
+    id: "obsidian", icon: "🌋", label: "Obsidian Blaze",
+    accent: "#FF5A3C",
+    bg: "radial-gradient(1200px 600px at 10% -10%, #2A0E08 0%, #170603 55%, #0D0301 100%)",
+    unlockLevel: 25,
+  },
+  {
+    id: "sapphire", icon: "🔷", label: "Sapphire Storm",
+    accent: "#3FA9F5",
+    bg: "radial-gradient(1200px 600px at 10% -10%, #0B233D 0%, #061424 55%, #030D18 100%)",
+    unlockLevel: 30,
+  },
+  {
+    id: "inferno", icon: "🔥", label: "Streak Inferno",
+    accent: "#FF6B35",
+    bg: "radial-gradient(1200px 600px at 10% -10%, #3D1206 0%, #200902 55%, #140501 100%)",
+    unlockBadge: "streak_100",
+  },
+  {
+    id: "neon", icon: "🌈", label: "Cyber Neon",
+    accent: "#FF3DBB",
+    bg: "radial-gradient(1200px 600px at 10% -10%, #170B33 0%, #0B051D 55%, #060312 100%)",
+    unlockLevel: 40,
+  },
+  {
+    id: "chrome", icon: "🔬", label: "Precision Chrome",
+    accent: "#D9E6EC",
+    bg: "radial-gradient(1200px 600px at 10% -10%, #1C232A 0%, #10151A 55%, #0A0D10 100%)",
+    unlockBadge: "precision_master",
+  },
+  {
+    id: "prestige", icon: "👑", label: "Grandmaster Prestige",
+    accent: "#FFD86B",
+    bg: "radial-gradient(1200px 600px at 10% -10%, #3D2F06 0%, #221A03 55%, #141001 100%)",
+    unlockBadge: "level_50",
+  },
 ];
 
 const THEME_KEY = "buddhidrill-theme";
@@ -62,7 +100,10 @@ export function isThemeUnlocked(theme, { level, unlockedBadges }) {
 }
 
 export function unlockRequirementLabel(theme) {
-  if (theme.unlockBadge) return "Unlock the Level 20 badge";
+  if (theme.unlockBadge) {
+    const b = badgeById(theme.unlockBadge);
+    return b ? `Unlock the "${b.label}" badge` : "Unlock a hidden badge";
+  }
   if (theme.unlockLevel) return `Reach level ${theme.unlockLevel}`;
   return "";
 }

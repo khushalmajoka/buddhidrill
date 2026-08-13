@@ -81,6 +81,15 @@ export const GLOBAL_CSS = `
     .bd-tap-target {
       min-height: 44px !important;
     }
+
+    .bd-sticky-hud {
+      gap: 8px !important;
+      padding: 8px 10px !important;
+      font-size: 11px !important;
+    }
+    .bd-sticky-hud .bd-hud-divider {
+      display: none !important;
+    }
   }
 
   @media (max-width: 400px) {
@@ -171,6 +180,37 @@ export const styles = {
     fontSize: 10.5,
     fontWeight: 600,
     color: "#93A6B8",
+  },
+
+  /* ---- Sticky HUD (always visible while playing) ---- */
+  stickyHud: {
+    position: "sticky",
+    top: 0,
+    zIndex: 40,
+    display: "flex",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: 16,
+    background: "rgba(11,25,41,0.92)",
+    backdropFilter: "blur(6px)",
+    WebkitBackdropFilter: "blur(6px)",
+    border: "1.5px solid var(--bd-accent, #E8B23D)",
+    borderRadius: 12,
+    padding: "10px 16px",
+    marginBottom: 20,
+    boxShadow: "0 4px 16px rgba(0,0,0,0.25)",
+  },
+  hudItem: { display: "flex", flexDirection: "column", gap: 2, fontFamily: "'JetBrains Mono', monospace" },
+  hudLabel: { fontSize: 9.5, letterSpacing: "0.08em", color: "#93A6B8", whiteSpace: "nowrap" },
+  hudValue: { fontSize: 14, fontWeight: 700, color: "#F4EFE3", whiteSpace: "nowrap" },
+  hudSub: { fontSize: 10, color: "#93A6B8", fontWeight: 500 },
+  hudDivider: { width: 1, alignSelf: "stretch", background: "rgba(255,255,255,0.12)" },
+  hudXpTrack: { height: 5, borderRadius: 999, background: "rgba(255,255,255,0.1)", overflow: "hidden", marginTop: 3, minWidth: 90 },
+  hudXpFill: {
+    height: "100%",
+    borderRadius: 999,
+    background: "linear-gradient(90deg, var(--bd-accent, #E8B23D), #F4D06F)",
+    transition: "width 0.3s ease",
   },
 
   chipsRow: { display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 20, alignItems: "center" },
@@ -856,5 +896,73 @@ export const styles = {
     borderRadius: 12,
     padding: "12px 16px",
     margin: "10px 0 18px",
+  },
+
+  /* ---- Phase 4: Practice Plan, Adaptive Difficulty, Reminders ---- */
+  practicePlanCard: {
+    background: "rgba(232,178,61,0.08)",
+    border: "1.5px solid #E8B23D",
+    borderRadius: 14,
+    padding: "16px 18px",
+    marginBottom: 20,
+    display: "flex",
+    flexDirection: "column",
+    gap: 10,
+  },
+  practicePlanTitle: {
+    fontFamily: "'Space Grotesk', sans-serif",
+    fontSize: 15,
+    fontWeight: 700,
+    color: "#F4EFE3",
+  },
+  practicePlanDesc: { fontSize: 12.5, color: "#93A6B8", lineHeight: 1.5 },
+  practicePlanTags: { display: "flex", flexWrap: "wrap", gap: 6 },
+  practicePlanTag: {
+    fontSize: 11.5,
+    fontWeight: 700,
+    padding: "4px 10px",
+    borderRadius: 999,
+    color: "#F4EFE3",
+  },
+  practicePlanBtn: {
+    alignSelf: "flex-start",
+    background: "#E8B23D",
+    color: "#0B1929",
+    fontWeight: 700,
+    border: "none",
+    borderRadius: 999,
+    padding: "9px 18px",
+    fontSize: 13,
+    cursor: "pointer",
+  },
+
+  reminderCard: {
+    background: "rgba(31,41,55,0.04)",
+    border: "1px solid #E3D9BE",
+    borderRadius: 12,
+    padding: "14px 16px",
+    marginTop: 8,
+    display: "flex",
+    flexDirection: "column",
+    gap: 10,
+  },
+  reminderRow: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" },
+  reminderTimeInput: {
+    padding: "6px 10px",
+    borderRadius: 8,
+    border: "1.5px solid #D8CFB8",
+    background: "#FFFDF7",
+    color: "#1F2937",
+    fontFamily: "'JetBrains Mono', monospace",
+    fontSize: 13,
+  },
+  reminderToggleBtn: {
+    border: "1.5px solid",
+    borderRadius: 999,
+    padding: "7px 14px",
+    fontSize: 12.5,
+    fontWeight: 700,
+    background: "transparent",
+    transition: "all 0.15s ease",
   },
 };

@@ -19,9 +19,20 @@ import {
 } from "./stats";
 import { FONT_IMPORT, GLOBAL_CSS, styles } from "./styles";
 import { loadSoundPref, saveSoundPref, playCorrect, playWrong, playTap, playNewBest } from "./lib/sound";
-import { loadXP, addXP, levelFromXP, levelProgress, xpForAnswer } from "./lib/xp";
+import { loadXP, addXP, levelFromXP, levelProgress, xpForAnswer, comboMultiplier } from "./lib/xp";
 import { loadUnlockedBadges, evaluateBadges, badgeById } from "./lib/badges";
 import { loadThemeId, saveThemeId, getTheme, isThemeUnlocked } from "./lib/themes";
+import {
+  loadAdaptiveOnPref, saveAdaptiveOnPref, loadAdaptiveState, recordAdaptiveOutcome, applyAdaptiveRanges,
+} from "./lib/adaptive";
+import {
+  loadSpacedRepOnPref, saveSpacedRepOnPref, loadSRS, recordSRSOutcome, srsPriority,
+} from "./lib/spacedRepetition";
+import { buildPracticePlan } from "./lib/practicePlan";
+import {
+  loadReminderPref, saveReminderPref, notificationsSupported, notificationPermission,
+  requestNotificationPermission, startReminderLoop,
+} from "./lib/reminders";
 import GamePanel from "./components/GamePanel";
 import BattlePanel from "./components/BattlePanel";
 import RangeRow from "./components/RangeRow";
@@ -34,6 +45,9 @@ import BadgeUnlockToast from "./components/BadgeUnlockToast";
 import LearnPanel from "./components/LearnPanel";
 import MockTestPanel from "./components/MockTestPanel";
 import BossPanel, { BOSS_DURATION, BOSS_TARGET } from "./components/BossPanel";
+import PracticePlanCard from "./components/PracticePlanCard";
+import ReminderSettings from "./components/ReminderSettings";
+import StickyHUD from "./components/StickyHUD";
 
 /* ============================================================
    MAIN COMPONENT
@@ -72,6 +86,23 @@ export default function BuddhiDrill() {
   const [session, setSession] = useState({ correct: 0, total: 0, streak: 0, best: 0 });
   const [showHeatmap, setShowHeatmap] = useState(true);
   const [weakMode, setWeakMode] = useState(false);
+
+  // ---- Phase 4: adaptive difficulty, spaced repetition, practice plan, reminders ----
+  const [adaptiveOn, setAdaptiveOn] = useState(() => loadAdaptiveOnPref());
+  const [adaptiveState, setAdaptiveState] = useState(() => loadAdaptiveState());
+  const [spacedRepOn, setSpacedRepOn] = useState(() => loadSpacedRepOnPref());
+  const [srs, setSrs] = useState(() => loadSRS());
+  const [reminderPref, setReminderPref] = useState(() => loadReminderPref());
+  const [notifPermission, setNotifPermission] = useState(() => notificationPermission());
+  const reminderPrefRef = useRef(reminderPref);
+  const historyRefForReminder = useRef(null);
+
+  function toggleAdaptive() {
+    setAdaptiveOn((v) => { saveAdaptiveOnPref(!v); return !v; });
+  }
+  function toggleSpacedRep() {
+    setSpacedRepOn((v) => { saveSpacedRepOnPref(!v); return !v; });
+  }
   // day-by-day correct/total log (separate from per-item `stats`) — powers
   // the learning-curve chart on the Progress tab. Shared across Practice,
   // Game, and Battle, since they all feed the same daily total.
@@ -93,6 +124,41 @@ export default function BuddhiDrill() {
     if (!isThemeUnlocked(t, { level: xpProgress.level, unlockedBadges })) return;
     setThemeId(id);
     saveThemeId(id);
+  }
+
+  // ---- Daily reminder loop (Phase 4) ----
+  useEffect(() => { reminderPrefRef.current = reminderPref; }, [reminderPref]);
+  useEffect(() => { historyRefForReminder.current = history; }, [history]);
+
+  useEffect(() => {
+    const stop = startReminderLoop({
+      getPref: () => reminderPrefRef.current,
+      hasPracticedToday: () => {
+        const today = new Date().toISOString().slice(0, 10);
+        const h = historyRefForReminder.current;
+        return !!(h && h[today] && h[today].total > 0);
+      },
+    });
+    return stop;
+  }, []);
+
+  function toggleReminder() {
+    setReminderPref((p) => {
+      const next = { ...p, enabled: !p.enabled };
+      saveReminderPref(next);
+      return next;
+    });
+  }
+  function setReminderTime(time) {
+    setReminderPref((p) => {
+      const next = { ...p, time };
+      saveReminderPref(next);
+      return next;
+    });
+  }
+  async function handleRequestNotificationPermission() {
+    const result = await requestNotificationPermission();
+    setNotifPermission(result);
   }
 
   // grants XP for a correct answer (streak drives the combo multiplier),
@@ -588,21 +654,30 @@ export default function BuddhiDrill() {
     const cat = pickCategory(statsSnapshot);
     if (!cat) { setQuestion(null); return; }
     const forceType = answerMode === "mixed" ? undefined : answerMode;
+    // adaptive difficulty quietly scales the active ranges before generation;
+    // weak-mode/spaced-repetition weighting below never touches the base `ranges`
+    const effectiveRanges = applyAdaptiveRanges(ranges, adaptiveState, adaptiveOn);
     let q = null;
     let guard = 0;
-    // in weak mode, retry generation a few times hoping to land on a weak key
-    if (weakMode) {
-      let bestQ = GENERATORS[cat](forceType, ranges);
-      let bestW = weightForItem(statsSnapshot, cat, bestQ.key);
+    // in weak mode (and/or spaced repetition), retry generation a few times
+    // hoping to land on a weak/overdue key rather than a purely random one
+    const weightedPick = weakMode || spacedRepOn;
+    if (weightedPick) {
+      const weightOf = (cand) => {
+        const base = weightForItem(statsSnapshot, cat, cand.key);
+        return spacedRepOn ? base * srsPriority(srs, cat, cand.key) : base;
+      };
+      let bestQ = GENERATORS[cat](forceType, effectiveRanges);
+      let bestW = weightOf(bestQ);
       while (guard < 5) {
         guard++;
-        const cand = GENERATORS[cat](forceType, ranges);
-        const w = weightForItem(statsSnapshot, cat, cand.key);
+        const cand = GENERATORS[cat](forceType, effectiveRanges);
+        const w = weightOf(cand);
         if (w > bestW) { bestW = w; bestQ = cand; }
       }
       q = bestQ;
     } else {
-      q = GENERATORS[cat](forceType, ranges);
+      q = GENERATORS[cat](forceType, effectiveRanges);
     }
     autoFocusRef.current = !!focusAfter;
     questionStartRef.current = Date.now();
@@ -610,7 +685,7 @@ export default function BuddhiDrill() {
     setSelected(null);
     setFillValue("");
     setFeedback(null);
-  }, [pickCategory, weakMode, answerMode, ranges]);
+  }, [pickCategory, weakMode, answerMode, ranges, adaptiveOn, adaptiveState, spacedRepOn, srs]);
 
   // initial question on load — no auto-focus, so the keyboard doesn't pop
   // open the moment the page finishes loading on mobile
@@ -657,6 +732,13 @@ export default function BuddhiDrill() {
     persist(nextStats);
     const nextHistory = recordDailyHistory(history, correct);
     setHistory(nextHistory);
+
+    if (adaptiveOn) {
+      setAdaptiveState((prev) => recordAdaptiveOutcome(prev, question.category, correct));
+    }
+    if (spacedRepOn) {
+      setSrs((prev) => recordSRSOutcome(prev, question.category, question.key, correct));
+    }
 
     const newStreak = correct ? session.streak + 1 : 0;
     let newBestStreakEver = bestStreakEver;
@@ -1278,6 +1360,20 @@ export default function BuddhiDrill() {
 
   const accuracyPct = session.total > 0 ? Math.round((session.correct / session.total) * 100) : 0;
 
+  // Practice Plan (Phase 4) — recomputed whenever stats/srs change, cheap enough
+  // not to need memoization at this data size
+  const practicePlan = buildPracticePlan(stats, srs);
+  const hasAnyStatsData = allTimeSummary(stats).total > 0;
+
+  function startPracticePlan() {
+    const next = {};
+    for (const cat of CATEGORY_ORDER) next[cat] = practicePlan.categories.includes(cat);
+    setActive(next);
+    setWeakMode(true);
+    if (!spacedRepOn) { setSpacedRepOn(true); saveSpacedRepOnPref(true); }
+    setAppMode("practice");
+  }
+
   return (
     <div style={{ ...styles.page, background: theme.bg, "--bd-accent": theme.accent }} className="bd-page">
       <style>{FONT_IMPORT + GLOBAL_CSS}</style>
@@ -1317,6 +1413,21 @@ export default function BuddhiDrill() {
           </div>
         </header>
 
+        {/* STICKY HUD — always visible while playing (score, streak, combo, XP) */}
+        {appMode !== "progress" && (
+          <StickyHUD
+            correct={session.correct}
+            total={session.total}
+            streak={session.streak}
+            best={session.best}
+            multiplier={comboMultiplier(session.streak)}
+            level={xpProgress.level}
+            into={xpProgress.into}
+            need={xpProgress.need}
+            pct={xpProgress.pct}
+          />
+        )}
+
         {/* APP MODE: PRACTICE VS GAME */}
         <div style={styles.modeRow}>
           <span style={styles.modeLabel}>Mode:</span>
@@ -1351,10 +1462,39 @@ export default function BuddhiDrill() {
 
         {appMode === "practice" && (
         <>
+        {/* PRACTICE PLAN */}
+        <PracticePlanCard plan={practicePlan} onStart={startPracticePlan} hasAnyData={hasAnyStatsData} />
+
         {/* CATEGORY TOGGLES */}
         <CategoryPicker categories={CATEGORY_ORDER} meta={CATEGORY_META} active={active} onToggle={toggleCategory} />
 
-        <div style={styles.weakModeRow}>
+        <div style={{ ...styles.weakModeRow, flexWrap: "wrap", gap: 8 }}>
+          <button
+            onClick={toggleAdaptive}
+            style={{
+              ...styles.chip,
+              borderColor: adaptiveOn ? "#E8B23D" : "#3E566B",
+              color: adaptiveOn ? "#0B1929" : "#7C93A8",
+              background: adaptiveOn ? "#E8B23D" : "transparent",
+              fontWeight: 700,
+            }}
+            title="Quietly widens or narrows question ranges based on your recent accuracy per category"
+          >
+            🧠 Adaptive difficulty {adaptiveOn ? "ON" : "OFF"}
+          </button>
+          <button
+            onClick={toggleSpacedRep}
+            style={{
+              ...styles.chip,
+              borderColor: spacedRepOn ? "#E8B23D" : "#3E566B",
+              color: spacedRepOn ? "#0B1929" : "#7C93A8",
+              background: spacedRepOn ? "#E8B23D" : "transparent",
+              fontWeight: 700,
+            }}
+            title="Prioritizes items that are due for review on a spaced-repetition schedule"
+          >
+            ⏱️ Spaced repetition {spacedRepOn ? "ON" : "OFF"}
+          </button>
           <button
             onClick={() => setWeakMode((w) => !w)}
             style={{
@@ -1784,6 +1924,17 @@ export default function BuddhiDrill() {
             unlockedBadges={unlockedBadges}
             themeId={themeId}
             setTheme={selectTheme}
+          />
+        )}
+
+        {appMode === "progress" && (
+          <ReminderSettings
+            pref={reminderPref}
+            permission={notifPermission}
+            supported={notificationsSupported()}
+            onToggle={toggleReminder}
+            onTimeChange={setReminderTime}
+            onRequestPermission={handleRequestNotificationPermission}
           />
         )}
 

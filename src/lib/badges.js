@@ -7,6 +7,7 @@
    ============================================================ */
 
 import { categoryAccuracy } from "../stats";
+import { CATEGORY_ORDER } from "../constants";
 
 const UNLOCKED_KEY = "buddhidrill-badges";
 
@@ -134,6 +135,66 @@ export const BADGE_DEFS = [
     id: "boss_slayer", icon: "🐉", label: "Boss Slayer",
     desc: "Clear a Boss Level challenge.",
     check: () => bossCleared(),
+  },
+
+  /* ---- Expansion set (11 more, bringing the total to 25) ---- */
+  {
+    id: "half_century", icon: "🎖️", label: "Half Century",
+    desc: "Answer 500 questions in total.",
+    check: (ctx) => ctx.summary.total >= 500,
+  },
+  {
+    id: "marathoner", icon: "🏃", label: "Marathoner",
+    desc: "Answer 5,000 questions in total.",
+    check: (ctx) => ctx.summary.total >= 5000,
+  },
+  {
+    id: "streak_100", icon: "🌠", label: "Streak Titan",
+    desc: "Hit a 100-answer streak.",
+    check: (ctx) => ctx.bestStreakEver >= 100,
+  },
+  {
+    id: "habit_30", icon: "🗓️", label: "Month Master",
+    desc: "Practice 30 days in a row.",
+    check: (ctx) => currentDayStreak(ctx.history) >= 30,
+  },
+  {
+    id: "explorer", icon: "🧩", label: "Explorer",
+    desc: "Try every category at least once.",
+    check: (ctx) => CATEGORY_ORDER.every((cat) => categoryAccuracy(ctx.stats, cat).total >= 1),
+  },
+  {
+    id: "precision_master", icon: "🔬", label: "Precision Master",
+    desc: "Reach 90%+ overall accuracy across 300+ total attempts.",
+    check: (ctx) => ctx.summary.total >= 300 && ctx.summary.acc !== null && ctx.summary.acc >= 0.9,
+  },
+  {
+    id: "triple_threat", icon: "🎯", label: "Triple Threat",
+    desc: "Reach 100% accuracy in 3 different categories (20+ attempts each).",
+    check: (ctx) => CATEGORY_ORDER.filter((cat) => {
+      const a = categoryAccuracy(ctx.stats, cat);
+      return a.total >= 20 && a.acc === 1;
+    }).length >= 3,
+  },
+  {
+    id: "level_25", icon: "🏅", label: "Level 25",
+    desc: "Reach level 25.",
+    check: (ctx) => ctx.level >= 25,
+  },
+  {
+    id: "level_30", icon: "👑", label: "Level 30",
+    desc: "Reach level 30.",
+    check: (ctx) => ctx.level >= 30,
+  },
+  {
+    id: "level_40", icon: "💠", label: "Level 40",
+    desc: "Reach level 40.",
+    check: (ctx) => ctx.level >= 40,
+  },
+  {
+    id: "level_50", icon: "🏆", label: "Grandmaster",
+    desc: "Reach level 50 — the top of the climb.",
+    check: (ctx) => ctx.level >= 50,
   },
 ];
 
