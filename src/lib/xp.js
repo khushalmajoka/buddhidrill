@@ -26,10 +26,11 @@ function saveXP(xp) {
 }
 
 // Cumulative XP required to REACH a given level (level 1 = 0 XP).
-// Quadratic-ish growth: 100, 300, 600, 1000, 1500, 2100 ... — early
-// levels come fast (feels rewarding immediately), later ones stretch out.
+// Quadratic-ish growth: level 2 needs 100, level 3 needs 300, level 4
+// needs 600, level 5 needs 1000, ... — early levels come fast (feels
+// rewarding immediately), later ones stretch out.
 export function xpForLevel(level) {
-  return Math.round(50 * level * (level + 1));
+  return Math.round(50 * (level - 1) * level);
 }
 
 export function levelFromXP(xp) {
