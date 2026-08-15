@@ -8,12 +8,14 @@
    without a migration.
    ============================================================ */
 
+import { pkey } from "./profiles";
+
 const XP_KEY = "buddhidrill-xp";
 const BASE_XP = 10;
 
 export function loadXP() {
   try {
-    const raw = window.localStorage.getItem(XP_KEY);
+    const raw = window.localStorage.getItem(pkey(XP_KEY));
     const n = raw ? parseInt(raw, 10) : 0;
     return Number.isFinite(n) && n >= 0 ? n : 0;
   } catch {
@@ -22,7 +24,7 @@ export function loadXP() {
 }
 
 function saveXP(xp) {
-  try { window.localStorage.setItem(XP_KEY, String(xp)); } catch { /* ignore */ }
+  try { window.localStorage.setItem(pkey(XP_KEY), String(xp)); } catch { /* ignore */ }
 }
 
 // Cumulative XP required to REACH a given level (level 1 = 0 XP).

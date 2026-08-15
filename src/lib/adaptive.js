@@ -10,6 +10,7 @@
    ============================================================ */
 
 import { RANGE_FIELDS, ABSOLUTE_LIMITS } from "../constants";
+import { pkey } from "./profiles";
 
 const ADAPTIVE_KEY = "buddhidrill-adaptive";
 const ADAPTIVE_ON_KEY = "buddhidrill-adaptive-on";
@@ -23,11 +24,11 @@ const LEVEL_MIN = 0.6;
 const LEVEL_MAX = 1.6;
 
 export function loadAdaptiveOnPref() {
-  try { return window.localStorage.getItem(ADAPTIVE_ON_KEY) === "1"; } catch { return false; }
+  try { return window.localStorage.getItem(pkey(ADAPTIVE_ON_KEY)) === "1"; } catch { return false; }
 }
 
 export function saveAdaptiveOnPref(on) {
-  try { window.localStorage.setItem(ADAPTIVE_ON_KEY, on ? "1" : "0"); } catch { /* ignore */ }
+  try { window.localStorage.setItem(pkey(ADAPTIVE_ON_KEY), on ? "1" : "0"); } catch { /* ignore */ }
 }
 
 export function emptyAdaptiveState() {
@@ -36,7 +37,7 @@ export function emptyAdaptiveState() {
 
 export function loadAdaptiveState() {
   try {
-    const raw = window.localStorage.getItem(ADAPTIVE_KEY);
+    const raw = window.localStorage.getItem(pkey(ADAPTIVE_KEY));
     if (!raw) return emptyAdaptiveState();
     const parsed = JSON.parse(raw);
     return { levels: parsed.levels || {}, rolling: parsed.rolling || {} };
@@ -46,7 +47,7 @@ export function loadAdaptiveState() {
 }
 
 function saveAdaptiveState(state) {
-  try { window.localStorage.setItem(ADAPTIVE_KEY, JSON.stringify(state)); } catch { /* ignore */ }
+  try { window.localStorage.setItem(pkey(ADAPTIVE_KEY), JSON.stringify(state)); } catch { /* ignore */ }
 }
 
 export function resetAdaptiveState() {

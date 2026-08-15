@@ -5,11 +5,13 @@
    on/off flag persisted to localStorage.
    ============================================================ */
 
+import { pkey } from "./profiles";
+
 const SOUND_KEY = "buddhidrill-sound";
 
 export function loadSoundPref() {
   try {
-    const raw = window.localStorage.getItem(SOUND_KEY);
+    const raw = window.localStorage.getItem(pkey(SOUND_KEY));
     return raw === null ? true : raw === "1";
   } catch {
     return true;
@@ -17,7 +19,7 @@ export function loadSoundPref() {
 }
 
 export function saveSoundPref(on) {
-  try { window.localStorage.setItem(SOUND_KEY, on ? "1" : "0"); } catch { /* ignore */ }
+  try { window.localStorage.setItem(pkey(SOUND_KEY), on ? "1" : "0"); } catch { /* ignore */ }
 }
 
 let ctx = null;

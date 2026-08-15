@@ -8,12 +8,14 @@
    Notification if so (never more than once per day).
    ============================================================ */
 
+import { pkey } from "./profiles";
+
 const REMINDER_KEY = "buddhidrill-reminder";
 const FIRED_PREFIX = "buddhidrill-reminder-fired-";
 
 export function loadReminderPref() {
   try {
-    const raw = window.localStorage.getItem(REMINDER_KEY);
+    const raw = window.localStorage.getItem(pkey(REMINDER_KEY));
     return raw ? JSON.parse(raw) : { enabled: false, time: "18:00" };
   } catch {
     return { enabled: false, time: "18:00" };
@@ -21,7 +23,7 @@ export function loadReminderPref() {
 }
 
 export function saveReminderPref(pref) {
-  try { window.localStorage.setItem(REMINDER_KEY, JSON.stringify(pref)); } catch { /* ignore */ }
+  try { window.localStorage.setItem(pkey(REMINDER_KEY), JSON.stringify(pref)); } catch { /* ignore */ }
 }
 
 export function notificationsSupported() {
@@ -65,9 +67,9 @@ export function startReminderLoop({ getPref, hasPracticedToday }) {
     target.setHours(h, m, 0, 0);
     const todayKey = now.toISOString().slice(0, 10);
     const firedKey = `${FIRED_PREFIX}${todayKey}`;
-    if (now >= target && !hasPracticedToday() && !window.localStorage.getItem(firedKey)) {
+    if (now >= target && !hasPracticedToday() && !window.localStorage.getItem(pkey(firedKey))) {
       fireReminderNotification();
-      try { window.localStorage.setItem(firedKey, "1"); } catch { /* ignore */ }
+      try { window.localStorage.setItem(pkey(firedKey), "1"); } catch { /* ignore */ }
     }
   };
   check();

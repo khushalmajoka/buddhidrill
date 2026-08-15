@@ -4,6 +4,15 @@ import {
 } from "firebase/database";
 
 import { getFirebaseDb, newRoomCode, ensureFirebaseAuth } from "./firebase";
+import { pkey, loadProfiles, loadActiveProfileId, saveActiveProfileId, createProfile, renameProfile, deleteProfile, setProfileAvatar } from "./lib/profiles";
+import { loadBigTextPref, saveBigTextPref } from "./lib/accessibility";
+import { readChallengeFromUrl } from "./lib/dailyChallenge";
+import ProfileSwitcher from "./components/ProfileSwitcher";
+import ShareCardModal from "./components/ShareCardModal";
+import DailyChallengePanel from "./components/DailyChallengePanel";
+import LeaderboardPanel from "./components/LeaderboardPanel";
+import TeamPanel from "./components/TeamPanel";
+import SettingsIOPanel from "./components/SettingsIOPanel";
 import {
   FRACTIONS, QUICK_PCT, CATEGORY_META, CATEGORY_ORDER,
   ABSOLUTE_LIMITS, DIFFICULTY_PRESETS, GAME_CATEGORY_ORDER, HOST_DISCONNECT_GRACE_MS,
@@ -62,6 +71,11 @@ export default function BuddhiDrill() {
     alphaValue: true, alphaOpposite: true, bodmas: true,
   });
   const [soundOn, setSoundOn] = useState(() => loadSoundPref());
+  const [bigText, setBigText] = useState(() => loadBigTextPref());
+  function toggleBigText() {
+    setBigText((v) => { saveBigTextPref(!v); return !v; });
+  }
+  const [shareCardData, setShareCardData] = useState(null);
   const [showConfetti, setShowConfetti] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const confettiTimeoutRef = useRef(null);
@@ -108,8 +122,48 @@ export default function BuddhiDrill() {
   // Game, and Battle, since they all feed the same daily total.
   const [history, setHistory] = useState(() => loadHistory());
   const [bestStreakEver, setBestStreakEver] = useState(() => {
-    try { return parseInt(window.localStorage.getItem("buddhidrill-best-streak"), 10) || 0; } catch { return 0; }
+    try { return parseInt(window.localStorage.getItem(pkey("buddhidrill-best-streak")), 10) || 0; } catch { return 0; }
   });
+
+  // ---- Profiles (Phase 6, item 25) ----
+  const [profiles, setProfiles] = useState(() => loadProfiles());
+  const [activeProfileId, setActiveProfileId] = useState(() => loadActiveProfileId());
+  function switchProfile(id) {
+    if (id === activeProfileId) return;
+    saveActiveProfileId(id);
+    setActiveProfileId(id);
+    // simplest safe way to re-initialize every piece of per-profile state
+    // (stats, XP, badges, theme, adaptive/SRS, history, best streak, name)
+    // from the newly-active profile's namespaced localStorage keys
+    window.location.reload();
+  }
+  function handleCreateProfile(name) { setProfiles(createProfile(name)); }
+  function handleRenameProfile(id, name) { setProfiles(renameProfile(id, name)); }
+  function handleSetProfileAvatar(id, avatar) { setProfiles(setProfileAvatar(id, avatar)); }
+  function handleDeleteProfile(id) {
+    const next = deleteProfile(id);
+    setProfiles(next);
+    if (id === activeProfileId) window.location.reload();
+  }
+
+  // ---- Weekly leaderboard score (Phase 5, item 19) ----
+  // simplest honest signal: total correct answers logged in `history`
+  // since the start of THIS calendar week (Mon-based), summed live.
+  const weeklyScore = (() => {
+    const now = new Date();
+    const day = now.getDay() || 7;
+    const monday = new Date(now);
+    monday.setDate(now.getDate() - day + 1);
+    monday.setHours(0, 0, 0, 0);
+    let total = 0;
+    for (const [dateKey, v] of Object.entries(history)) {
+      if (new Date(dateKey) >= monday) total += v.correct || 0;
+    }
+    return total;
+  })();
+
+  // ---- Async friend challenge, read once from the URL on load (Phase 5, item 18) ----
+  const [incomingChallenge, setIncomingChallenge] = useState(() => readChallengeFromUrl());
 
   // ---- Gamification: XP/levels, badges, cosmetic themes ----
   const [xp, setXp] = useState(() => loadXP());
@@ -214,7 +268,7 @@ export default function BuddhiDrill() {
   const questionStartRef = useRef(null);
 
   // ---- Game mode state ----
-  const [appMode, setAppMode] = useState("practice"); // 'practice' | 'game'
+  const [appMode, setAppMode] = useState(() => (readChallengeFromUrl() ? "daily" : "practice"));
   const [gameCats, setGameCats] = useState({
     multiplication: true, addition: true, subtraction: true, division: true, squares: true, cubes: true,
     alphaValue: true, alphaOpposite: true, bodmas: true,
@@ -240,7 +294,7 @@ export default function BuddhiDrill() {
 
   useEffect(() => {
     try {
-      const raw = window.localStorage.getItem(`buddhidrill-highscore-${gameDuration}`);
+      const raw = window.localStorage.getItem(pkey(`buddhidrill-highscore-${gameDuration}`));
       setGameBest(raw ? parseInt(raw, 10) || 0 : 0);
     } catch { /* ignore */ }
   }, [gameDuration]);
@@ -433,7 +487,7 @@ export default function BuddhiDrill() {
       const cleared = tally.correct >= BOSS_TARGET;
       setBossCleared(cleared);
       if (cleared) {
-        try { window.localStorage.setItem("buddhidrill-boss-cleared", "1"); } catch { /* ignore */ }
+        try { window.localStorage.setItem(pkey("buddhidrill-boss-cleared"), "1"); } catch { /* ignore */ }
         fireConfetti(2200);
         playNewBest(soundOn);
         const newXP = awardXP(true, 0);
@@ -508,7 +562,7 @@ export default function BuddhiDrill() {
   const [battleStage, setBattleStage] = useState("menu"); // menu | create | join | lobby | countdown | playing | results
   const [playerId, setPlayerId] = useState(null); // resolved from Firebase Anonymous Auth right before create/join
   const [playerName, setPlayerName] = useState(() => {
-    try { return window.localStorage.getItem("buddhidrill-name") || ""; } catch { return ""; }
+    try { return window.localStorage.getItem(pkey("buddhidrill-name")) || ""; } catch { return ""; }
   });
   const [joinCodeInput, setJoinCodeInput] = useState("");
   const [battleDuration, setBattleDuration] = useState(60);
@@ -611,7 +665,7 @@ export default function BuddhiDrill() {
   // load persisted stats (browser localStorage — works once deployed as a standalone site)
   useEffect(() => {
     try {
-      const raw = window.localStorage.getItem("buddhidrill-stats");
+      const raw = window.localStorage.getItem(pkey("buddhidrill-stats"));
       if (raw) setStats({ ...emptyStats(), ...JSON.parse(raw) });
     } catch {
       // no saved stats yet, or storage blocked — start fresh
@@ -622,7 +676,7 @@ export default function BuddhiDrill() {
 
   const persist = useCallback((next) => {
     try {
-      window.localStorage.setItem("buddhidrill-stats", JSON.stringify(next));
+      window.localStorage.setItem(pkey("buddhidrill-stats"), JSON.stringify(next));
     } catch {
       // storage unavailable (e.g. private browsing) — session continues without persistence
     }
@@ -745,7 +799,7 @@ export default function BuddhiDrill() {
     if (newStreak > bestStreakEver) {
       newBestStreakEver = newStreak;
       setBestStreakEver(newStreak);
-      try { window.localStorage.setItem("buddhidrill-best-streak", String(newStreak)); } catch { /* ignore */ }
+      try { window.localStorage.setItem(pkey("buddhidrill-best-streak"), String(newStreak)); } catch { /* ignore */ }
     }
     setSession((s) => ({
       correct: s.correct + (correct ? 1 : 0),
@@ -861,7 +915,7 @@ export default function BuddhiDrill() {
     setGameTally((tally) => {
       if (tally.correct > gameBest && tally.correct > 0) {
         setGameBest(tally.correct);
-        try { window.localStorage.setItem(`buddhidrill-highscore-${gameDuration}`, String(tally.correct)); } catch { /* ignore */ }
+        try { window.localStorage.setItem(pkey(`buddhidrill-highscore-${gameDuration}`), String(tally.correct)); } catch { /* ignore */ }
         fireConfetti();
         playNewBest(soundOn);
       }
@@ -1035,7 +1089,7 @@ export default function BuddhiDrill() {
     const db = getFirebaseDb();
     if (!db) { setBattleError("Battle Mode isn't configured yet — see the Firebase setup notes."); return; }
     const name = playerName.trim().slice(0, 16) || "Player 1";
-    try { window.localStorage.setItem("buddhidrill-name", name); } catch { /* ignore */ }
+    try { window.localStorage.setItem(pkey("buddhidrill-name"), name); } catch { /* ignore */ }
     setBattleError("");
     setBattleBusy(true);
     try {
@@ -1082,7 +1136,7 @@ export default function BuddhiDrill() {
     const code = joinCodeInput.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
     if (code.length < 4) { setBattleError("Enter the room code your friend shared with you."); return; }
     const name = playerName.trim().slice(0, 16) || "Player 2";
-    try { window.localStorage.setItem("buddhidrill-name", name); } catch { /* ignore */ }
+    try { window.localStorage.setItem(pkey("buddhidrill-name"), name); } catch { /* ignore */ }
     setBattleError("");
     setBattleBusy(true);
     try {
@@ -1375,10 +1429,14 @@ export default function BuddhiDrill() {
   }
 
   return (
-    <div style={{ ...styles.page, background: theme.bg, "--bd-accent": theme.accent }} className="bd-page">
+    <div
+      style={{ ...styles.page, background: theme.bg, "--bd-accent": theme.accent }}
+      className={`bd-page${theme.light ? " bd-light" : ""}${bigText ? " bd-big-text" : ""}`}
+    >
       <style>{FONT_IMPORT + GLOBAL_CSS}</style>
       {showConfetti && <Confetti />}
       {currentBadgeToast && <BadgeUnlockToast badge={currentBadgeToast} />}
+      {shareCardData && <ShareCardModal cardData={shareCardData} onClose={() => setShareCardData(null)} />}
 
       <div style={styles.wrap} className="bd-wrap">
         {/* ADMIT-CARD HEADER */}
@@ -1405,6 +1463,7 @@ export default function BuddhiDrill() {
             <button
               onClick={toggleSound}
               style={styles.soundToggleBtn}
+              className="bd-sound-toggle"
               title={soundOn ? "Mute sound effects" : "Unmute sound effects"}
               type="button"
             >
@@ -1412,6 +1471,17 @@ export default function BuddhiDrill() {
             </button>
           </div>
         </header>
+
+        {/* PROFILE SWITCHER — Phase 6 item 25 */}
+        <ProfileSwitcher
+          profiles={profiles}
+          activeId={activeProfileId}
+          onSwitch={switchProfile}
+          onCreate={handleCreateProfile}
+          onRename={handleRenameProfile}
+          onDelete={handleDeleteProfile}
+          onSetAvatar={handleSetProfileAvatar}
+        />
 
         {/* STICKY HUD — always visible while playing (score, streak, combo, XP) */}
         {appMode !== "progress" && (
@@ -1430,7 +1500,7 @@ export default function BuddhiDrill() {
 
         {/* APP MODE: PRACTICE VS GAME */}
         <div style={styles.modeRow}>
-          <span style={styles.modeLabel}>Mode:</span>
+          <span style={styles.modeLabel} className="bd-mode-label">Mode:</span>
           <div style={styles.segmentGroup} className="bd-segment-scroll">
             {[
               { id: "practice", label: "📖 Practice" },
@@ -1439,12 +1509,16 @@ export default function BuddhiDrill() {
               { id: "boss", label: "🐉 Boss" },
               { id: "game", label: "🎮 Game" },
               { id: "battle", label: "⚔️ Battle" },
+              { id: "team", label: "🧑‍🤝‍🧑 Team" },
+              { id: "daily", label: "🗓️ Daily" },
+              { id: "leaderboard", label: "🏆 Leaders" },
               { id: "progress", label: "📊 Progress" },
             ].map((opt) => {
               const on = appMode === opt.id;
               return (
                 <button
                   key={opt.id}
+                  data-active={on ? "true" : "false"}
                   onClick={() => { setAppMode(opt.id); setShowResetConfirm(false); }}
                   style={{
                     ...styles.segmentBtn,
@@ -1863,6 +1937,7 @@ export default function BuddhiDrill() {
             gameInputRef={gameInputRef}
             setGameStatus={setGameStatus}
             soundOn={soundOn}
+            onShare={setShareCardData}
           />
         )}
 
@@ -1914,6 +1989,24 @@ export default function BuddhiDrill() {
           />
         )}
 
+        {appMode === "team" && (
+          <TeamPanel playerName={playerName} />
+        )}
+
+        {appMode === "daily" && (
+          <DailyChallengePanel
+            playerName={playerName}
+            soundOn={soundOn}
+            onAwardXp={(correct) => awardXP(correct, 0)}
+            incomingChallenge={incomingChallenge}
+            onClearIncoming={() => setIncomingChallenge(null)}
+          />
+        )}
+
+        {appMode === "leaderboard" && (
+          <LeaderboardPanel weeklyScore={weeklyScore} playerName={playerName} />
+        )}
+
         {appMode === "progress" && (
           <ProgressPanel
             stats={stats}
@@ -1935,6 +2028,42 @@ export default function BuddhiDrill() {
             onToggle={toggleReminder}
             onTimeChange={setReminderTime}
             onRequestPermission={handleRequestNotificationPermission}
+          />
+        )}
+
+        {appMode === "progress" && (
+          <SettingsIOPanel
+            settingsState={{
+              active, ranges, difficultyLabel, answerMode, themeId, soundOn,
+              adaptiveOn, spacedRepOn, reminderPref, bigText,
+            }}
+            onApplyImportedSettings={(s) => {
+              if (s.active) setActive(s.active);
+              if (s.ranges) setRanges(s.ranges);
+              if (s.difficultyLabel) setDifficultyLabel(s.difficultyLabel);
+              if (s.answerMode) setAnswerMode(s.answerMode);
+              if (s.themeId) selectTheme(s.themeId);
+              if (typeof s.soundOn === "boolean") { setSoundOn(s.soundOn); saveSoundPref(s.soundOn); }
+              if (typeof s.adaptiveOn === "boolean") { setAdaptiveOn(s.adaptiveOn); saveAdaptiveOnPref(s.adaptiveOn); }
+              if (typeof s.spacedRepOn === "boolean") { setSpacedRepOn(s.spacedRepOn); saveSpacedRepOnPref(s.spacedRepOn); }
+              if (s.reminderPref) setReminderPref(s.reminderPref);
+              if (typeof s.bigText === "boolean") { setBigText(s.bigText); saveBigTextPref(s.bigText); }
+            }}
+            bigText={bigText}
+            onToggleBigText={toggleBigText}
+            onExportProgressImage={() => {
+              const summary = allTimeSummary(stats);
+              setShareCardData({
+                title: `Level ${xpProgress.level}`,
+                subtitle: "BuddhiDrill progress",
+                statLines: [
+                  { label: "Total answered", value: summary.total },
+                  { label: "Accuracy", value: summary.acc !== null ? `${Math.round(summary.acc * 100)}%` : "—" },
+                  { label: "Best streak", value: bestStreakEver },
+                  { label: "Badges earned", value: unlockedBadges.length },
+                ],
+              });
+            }}
           />
         )}
 

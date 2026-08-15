@@ -9,6 +9,8 @@
    biases toward items that are *due*, regardless of raw accuracy.
    ============================================================ */
 
+import { pkey } from "./profiles";
+
 const SRS_KEY = "buddhidrill-srs";
 const SRS_ON_KEY = "buddhidrill-srs-on";
 
@@ -24,16 +26,16 @@ const INTERVALS_MS = [
 const MAX_BOX = INTERVALS_MS.length - 1;
 
 export function loadSpacedRepOnPref() {
-  try { return window.localStorage.getItem(SRS_ON_KEY) === "1"; } catch { return false; }
+  try { return window.localStorage.getItem(pkey(SRS_ON_KEY)) === "1"; } catch { return false; }
 }
 
 export function saveSpacedRepOnPref(on) {
-  try { window.localStorage.setItem(SRS_ON_KEY, on ? "1" : "0"); } catch { /* ignore */ }
+  try { window.localStorage.setItem(pkey(SRS_ON_KEY), on ? "1" : "0"); } catch { /* ignore */ }
 }
 
 export function loadSRS() {
   try {
-    const raw = window.localStorage.getItem(SRS_KEY);
+    const raw = window.localStorage.getItem(pkey(SRS_KEY));
     return raw ? JSON.parse(raw) : {};
   } catch {
     return {};
@@ -41,7 +43,7 @@ export function loadSRS() {
 }
 
 function saveSRS(srs) {
-  try { window.localStorage.setItem(SRS_KEY, JSON.stringify(srs)); } catch { /* ignore */ }
+  try { window.localStorage.setItem(pkey(SRS_KEY), JSON.stringify(srs)); } catch { /* ignore */ }
 }
 
 export function resetSRS() {

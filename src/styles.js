@@ -78,6 +78,7 @@ export const GLOBAL_CSS = `
     .bd-segment-scroll > button {
       padding: 9px 15px !important;
     }
+
     .bd-tap-target {
       min-height: 44px !important;
     }
@@ -97,6 +98,39 @@ export const GLOBAL_CSS = `
       grid-template-columns: 1fr !important;
     }
   }
+
+  /* ---- Daylight (light) theme, Phase 6 item 21 ----
+     Cards, prompts, and buttons already sit on a cream surface everywhere
+     (see the "Always rendered inside the cream .bd-card" convention), so
+     the light theme mainly needs to flip the DARK-NAVY structural chrome
+     around them: page text, header title/subtitle, stamp box, mode nav,
+     and the sticky HUD. Documented trade-off (same as cosmetic themes):
+     this reskins the main structural surfaces, not every nested hardcoded
+     color in every rarely-seen panel. */
+  .bd-light.bd-page { color: #2A2116 !important; }
+  .bd-light .bd-header-left h1 { color: #241C0F !important; }
+  .bd-light .bd-header-left > div { color: #6B5B3A !important; }
+  .bd-light .bd-header { border-bottom-color: #D8CBA6 !important; }
+  .bd-light .bd-stamp { background: rgba(255,255,255,0.55) !important; }
+  .bd-light .bd-stamp span { color: #3A2E17 !important; }
+  .bd-light .bd-sound-toggle { border-color: #C9B98C !important; color: #3A2E17 !important; }
+  .bd-light .bd-mode-label { color: #6B5B3A !important; }
+  .bd-light .bd-segment-scroll { border-color: #C9B98C !important; }
+  .bd-light .bd-segment-scroll > button:not([data-active="true"]) { color: #6B5B3A !important; }
+  .bd-light .bd-sticky-hud {
+    background: rgba(247,242,228,0.92) !important;
+    border-color: #D8CBA6 !important;
+  }
+  .bd-light .bd-sticky-hud span { color: #3A2E17 !important; }
+
+  /* ---- Bigger text / accessibility mode, Phase 6 item 22 ---- */
+  .bd-big-text .bd-prompt { font-size: clamp(30px, 7vw, 42px) !important; }
+  .bd-big-text .bd-card,
+  .bd-big-text .bd-card * { font-size: 1.16em; }
+  .bd-big-text .bd-options-grid button { padding: 16px 14px !important; }
+  .bd-big-text .bd-fill-input { font-size: 20px !important; padding: 14px !important; }
+  .bd-big-text .bd-submit-btn { padding: 14px 20px !important; }
+  .bd-big-text .bd-sticky-hud { font-size: 1.1em; }
 
   /* ---- Micro-animations ---- */
   @keyframes bd-confetti-fall {
@@ -965,4 +999,94 @@ export const styles = {
     background: "transparent",
     transition: "all 0.15s ease",
   },
+
+  /* ---- Generic modal (ShareCardModal) ---- */
+  modalOverlay: {
+    position: "fixed", inset: 0, background: "rgba(8,14,22,0.72)",
+    display: "flex", alignItems: "center", justifyContent: "center",
+    padding: 20, zIndex: 60,
+  },
+  modalCard: {
+    background: "#F4EFE3", borderRadius: 18, padding: "18px 20px 22px",
+    maxWidth: 420, width: "100%", maxHeight: "88vh", overflowY: "auto",
+    boxShadow: "0 20px 60px rgba(0,0,0,0.45)",
+  },
+  modalHeaderRow: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 },
+  modalTitle: { fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 16, color: "#1F2937" },
+  modalCloseBtn: { background: "none", border: "none", fontSize: 16, color: "#6B7A89", padding: 4 },
+
+  shareCardPreviewWrap: {
+    display: "flex", justifyContent: "center", background: "#0B1929",
+    borderRadius: 12, padding: 8, marginBottom: 10,
+  },
+  shareCardCanvas: { width: "100%", maxWidth: 320, borderRadius: 8, display: "block" },
+  shareCardNote: { fontSize: 12, color: "#6B7A89", textAlign: "center", marginBottom: 8 },
+  shareCardBtnRow: { display: "flex", gap: 10 },
+
+  primaryBtn: {
+    flex: 1, background: "var(--bd-accent, #E8B23D)", color: "#0B1929", border: "none",
+    borderRadius: 10, padding: "12px 16px", fontWeight: 700, fontSize: 14,
+  },
+  secondaryBtn: {
+    background: "transparent", color: "#4B5A6B", border: "1.5px solid #D8CFB8",
+    borderRadius: 10, padding: "9px 14px", fontWeight: 600, fontSize: 13,
+  },
+
+  /* ---- Leaderboard / daily challenge rows ---- */
+  leaderboardRow: {
+    display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10,
+    padding: "8px 4px", borderBottom: "1px solid #E3D9BE", fontSize: 13.5,
+  },
+  leaderboardRank: { fontWeight: 700, color: "#8A4B2B", minWidth: 30 },
+  leaderboardName: { flex: 1, color: "#3A3226", fontWeight: 600 },
+  leaderboardScore: { fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, color: "#1F2937" },
+  leaderboardMeRow: {
+    display: "flex", alignItems: "center", justifyContent: "space-between",
+    gap: 10, margin: "10px 0", flexWrap: "wrap",
+  },
+
+  challengeShareBox: {
+    marginTop: 14, background: "rgba(31,41,55,0.04)", border: "1px solid #E3D9BE",
+    borderRadius: 12, padding: "12px 14px",
+  },
+  challengeShareRow: { display: "flex", gap: 8, marginTop: 6 },
+  challengeShareInput: {
+    flex: 1, padding: "9px 12px", borderRadius: 8, border: "1.5px solid #D8CFB8",
+    background: "#FFFDF7", color: "#1F2937", fontFamily: "'JetBrains Mono', monospace", fontSize: 13,
+  },
+
+  /* ---- Team / group mode ---- */
+  teamColumns: { display: "flex", gap: 14, marginTop: 12, flexWrap: "wrap" },
+  teamColumn: {
+    flex: "1 1 160px", background: "rgba(31,41,55,0.04)", border: "1px solid #E3D9BE",
+    borderRadius: 12, padding: "12px 14px",
+  },
+
+  /* ---- Profile switcher ---- */
+  profileSwitcherWrap: { position: "relative", marginBottom: 18, display: "flex" },
+  profileSwitcherBtn: {
+    background: "rgba(255,255,255,0.06)", border: "1.5px solid #3E566B", color: "#E7E1D3",
+    borderRadius: 999, padding: "7px 14px", fontSize: 13, fontWeight: 600,
+  },
+  profileSwitcherMenu: {
+    position: "absolute", top: "110%", left: 0, zIndex: 40, minWidth: 240,
+    background: "#F4EFE3", borderRadius: 12, padding: "10px 12px",
+    boxShadow: "0 12px 32px rgba(0,0,0,0.35)",
+  },
+  profileRow: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "6px 2px" },
+  profileRowBtn: { background: "none", border: "none", color: "#1F2937", fontSize: 13.5, textAlign: "left", flex: 1 },
+  profileRowActions: { display: "flex", gap: 4 },
+  profileMiniBtn: { background: "none", border: "none", fontSize: 13, padding: "2px 5px", borderRadius: 6 },
+  profileNewRow: { display: "flex", gap: 6, marginTop: 8, paddingTop: 8, borderTop: "1px solid #E3D9BE" },
+  profileNewInput: {
+    flex: 1, padding: "7px 10px", borderRadius: 8, border: "1.5px solid #D8CFB8",
+    background: "#FFFDF7", color: "#1F2937", fontSize: 13,
+  },
+
+  /* ---- Settings import/export & accessibility block ---- */
+  settingsIOBlock: {
+    background: "rgba(31,41,55,0.04)", border: "1px solid #E3D9BE", borderRadius: 12,
+    padding: "14px 16px", marginTop: 18, display: "flex", flexDirection: "column", gap: 10,
+  },
+  settingsIORow: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" },
 };

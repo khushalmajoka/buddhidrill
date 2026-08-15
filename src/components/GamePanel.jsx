@@ -33,7 +33,7 @@ export default function GamePanel({
   gameCats, toggleGameCat, gameDuration, setGameDuration, gameStatus, gameTimeLeft,
   gameQuestion, gameFillValue, setGameFillValue, gameTally,
   gameBest, startGame, submitGameAnswer, handleGameFillSubmit, gameInputRef, setGameStatus,
-  soundOn,
+  soundOn, onShare,
 }) {
   const accuracy = gameTally.correct + gameTally.wrong > 0
     ? Math.round((gameTally.correct / (gameTally.correct + gameTally.wrong)) * 100)
@@ -173,6 +173,23 @@ export default function GamePanel({
           <div style={styles.gameResultsBtns}>
             <button style={styles.gameStartBtn} onClick={startGame}>Play Again</button>
             <button style={styles.linkBtn} onClick={() => setGameStatus("setup")}>Change Settings</button>
+            {onShare && (
+              <button
+                style={styles.secondaryBtn}
+                onClick={() => onShare({
+                  title: `${gameTally.correct} correct`,
+                  subtitle: `Game Mode · ${accuracy}% accuracy`,
+                  statLines: [
+                    { label: "Correct", value: gameTally.correct },
+                    { label: "Accuracy", value: `${accuracy}%` },
+                    { label: "Best streak", value: gameTally.bestStreak },
+                    { label: "Fastest answer", value: formatTime(gameTally.fastestMs) },
+                  ],
+                })}
+              >
+                📸 Share result
+              </button>
+            )}
           </div>
         </div>
       )}

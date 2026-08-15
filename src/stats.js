@@ -5,6 +5,8 @@
    question weighting.
    ============================================================ */
 
+import { pkey } from "./lib/profiles";
+
 export function emptyStats() {
   return {
     multiplication: {}, addition: {}, subtraction: {}, division: {},
@@ -86,7 +88,7 @@ const HISTORY_DAYS_KEPT = 60; // trim old entries so localStorage stays small
 
 export function loadHistory() {
   try {
-    const raw = window.localStorage.getItem(HISTORY_KEY);
+    const raw = window.localStorage.getItem(pkey(HISTORY_KEY));
     return raw ? JSON.parse(raw) : {};
   } catch {
     return {};
@@ -104,7 +106,7 @@ export function recordDailyHistory(history, correct) {
   if (keys.length > HISTORY_DAYS_KEPT) {
     for (const k of keys.slice(0, keys.length - HISTORY_DAYS_KEPT)) delete next[k];
   }
-  try { window.localStorage.setItem(HISTORY_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+  try { window.localStorage.setItem(pkey(HISTORY_KEY), JSON.stringify(next)); } catch { /* ignore */ }
   return next;
 }
 

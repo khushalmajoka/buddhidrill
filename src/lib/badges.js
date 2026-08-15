@@ -7,13 +7,14 @@
    ============================================================ */
 
 import { categoryAccuracy } from "../stats";
+import { pkey } from "./profiles";
 import { CATEGORY_ORDER } from "../constants";
 
 const UNLOCKED_KEY = "buddhidrill-badges";
 
 export function loadUnlockedBadges() {
   try {
-    const raw = window.localStorage.getItem(UNLOCKED_KEY);
+    const raw = window.localStorage.getItem(pkey(UNLOCKED_KEY));
     const arr = raw ? JSON.parse(raw) : [];
     return Array.isArray(arr) ? arr : [];
   } catch {
@@ -22,7 +23,7 @@ export function loadUnlockedBadges() {
 }
 
 function saveUnlockedBadges(ids) {
-  try { window.localStorage.setItem(UNLOCKED_KEY, JSON.stringify(ids)); } catch { /* ignore */ }
+  try { window.localStorage.setItem(pkey(UNLOCKED_KEY), JSON.stringify(ids)); } catch { /* ignore */ }
 }
 
 // consecutive days (ending today) with at least one attempt logged
@@ -44,7 +45,7 @@ function currentDayStreak(history) {
 
 function readHighScore(duration) {
   try {
-    const raw = window.localStorage.getItem(`buddhidrill-highscore-${duration}`);
+    const raw = window.localStorage.getItem(pkey(`buddhidrill-highscore-${duration}`));
     return raw ? parseInt(raw, 10) || 0 : 0;
   } catch {
     return 0;
@@ -52,7 +53,7 @@ function readHighScore(duration) {
 }
 
 function bossCleared() {
-  try { return window.localStorage.getItem("buddhidrill-boss-cleared") === "1"; } catch { return false; }
+  try { return window.localStorage.getItem(pkey("buddhidrill-boss-cleared")) === "1"; } catch { return false; }
 }
 
 // ctx = { stats, history, bestStreakEver, level, summary }

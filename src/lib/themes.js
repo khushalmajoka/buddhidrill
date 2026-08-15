@@ -9,12 +9,25 @@
    ============================================================ */
 
 import { badgeById } from "./badges";
+import { pkey } from "./profiles";
 
 export const THEMES = [
   {
     id: "classic", icon: "🌌", label: "Classic Navy",
     accent: "#E8B23D",
     bg: "radial-gradient(1200px 600px at 10% -10%, #16273D 0%, #0B1929 55%, #081422 100%)",
+    unlockLevel: 1,
+  },
+  {
+    // Phase 6, item 21 — the only theme with `light: true`; App.jsx adds a
+    // `bd-light` class to the page wrapper for this theme, which flips the
+    // handful of structural surfaces (page bg, cards, text colors) via CSS
+    // overrides in styles.js GLOBAL_CSS. Per the documented theme trade-off,
+    // this reskins the main surfaces, not every hardcoded color everywhere.
+    id: "daylight", icon: "☀️", label: "Daylight",
+    accent: "#B2762B",
+    bg: "radial-gradient(1200px 600px at 10% -10%, #F7F2E4 0%, #EFE8D6 55%, #E7DEC7 100%)",
+    light: true,
     unlockLevel: 1,
   },
   {
@@ -82,11 +95,11 @@ export const THEMES = [
 const THEME_KEY = "buddhidrill-theme";
 
 export function loadThemeId() {
-  try { return window.localStorage.getItem(THEME_KEY) || "classic"; } catch { return "classic"; }
+  try { return window.localStorage.getItem(pkey(THEME_KEY)) || "classic"; } catch { return "classic"; }
 }
 
 export function saveThemeId(id) {
-  try { window.localStorage.setItem(THEME_KEY, id); } catch { /* ignore */ }
+  try { window.localStorage.setItem(pkey(THEME_KEY), id); } catch { /* ignore */ }
 }
 
 export function getTheme(id) {
