@@ -24,8 +24,9 @@ function CatResultBar({ cat, v }) {
 
 export default function MockTestPanel({
   mockCats, toggleMockCat, mockLength, setMockLength, mockStatus, setMockStatus,
-  mockIdx, mockQuestion, mockFillValue, setMockFillValue, mockTally, mockReview,
-  startMockTest, submitMockAnswer, handleMockFillSubmit, mockInputRef,
+  mockIdx, mockQuestion, mockFillValue, setMockFillValue, mockTally, mockReview, mockRevealed,
+  startMockTest, submitMockAnswer, handleMockFillSubmit, skipMockQuestion, revealMockAnswer,
+  continueAfterMockReveal, mockInputRef,
 }) {
   const accuracy = mockTally.correct + mockTally.wrong > 0
     ? Math.round((mockTally.correct / (mockTally.correct + mockTally.wrong)) * 100)
@@ -75,34 +76,51 @@ export default function MockTestPanel({
 
           <div style={styles.gamePromptText} className="bd-prompt">{mockQuestion.prompt}</div>
 
-          {mockQuestion.type === "mcq" ? (
-            <div style={styles.optionsGrid} className="bd-options-grid">
-              {mockQuestion.options.map((opt, i) => (
-                <button
-                  key={i}
-                  onClick={() => submitMockAnswer(opt)}
-                  style={{ ...styles.optionBtn, background: "#FFFDF7", borderColor: "#D8CFB8", color: "#1F2937" }}
-                >
-                  {opt}
-                </button>
-              ))}
+          {mockRevealed !== null ? (
+            <div style={styles.mockRevealBox}>
+              <div style={styles.mockRevealLabel}>Answer</div>
+              <div style={styles.mockRevealValue}>{String(mockRevealed)}</div>
+              <button style={styles.gameStartBtn} onClick={continueAfterMockReveal}>
+                {mockIdx + 1 >= mockLength ? "Finish →" : "Continue →"}
+              </button>
             </div>
           ) : (
-            <form onSubmit={handleMockFillSubmit} style={styles.fillRow} className="bd-fill-row">
-              <input
-                ref={mockInputRef}
-                type="text"
-                inputMode={mockQuestion.inputMode === "text" ? "text" : "decimal"}
-                value={mockFillValue}
-                onChange={(e) => setMockFillValue(e.target.value)}
-                placeholder={mockQuestion.placeholder || "type your answer"}
-                className="bd-fill-input"
-                style={{ ...styles.fillInput, borderColor: "#B9AE94" }}
-              />
-              <button type="submit" style={styles.submitBtn} className="bd-submit-btn">
-                {mockIdx + 1 >= mockLength ? "Finish →" : "Next →"}
-              </button>
-            </form>
+            <>
+              {mockQuestion.type === "mcq" ? (
+                <div style={styles.optionsGrid} className="bd-options-grid">
+                  {mockQuestion.options.map((opt, i) => (
+                    <button
+                      key={i}
+                      onClick={() => submitMockAnswer(opt)}
+                      style={{ ...styles.optionBtn, background: "#FFFDF7", borderColor: "#D8CFB8", color: "#1F2937" }}
+                    >
+                      {opt}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <form onSubmit={handleMockFillSubmit} style={styles.fillRow} className="bd-fill-row">
+                  <input
+                    ref={mockInputRef}
+                    type="text"
+                    inputMode={mockQuestion.inputMode === "text" ? "text" : "decimal"}
+                    value={mockFillValue}
+                    onChange={(e) => setMockFillValue(e.target.value)}
+                    placeholder={mockQuestion.placeholder || "type your answer"}
+                    className="bd-fill-input"
+                    style={{ ...styles.fillInput, borderColor: "#B9AE94" }}
+                  />
+                  <button type="submit" style={styles.submitBtn} className="bd-submit-btn">
+                    {mockIdx + 1 >= mockLength ? "Finish →" : "Next →"}
+                  </button>
+                </form>
+              )}
+
+              <div style={styles.mockUtilityRow}>
+                <button type="button" style={styles.mockUtilityBtn} onClick={skipMockQuestion}>⏭ Skip</button>
+                <button type="button" style={styles.mockUtilityBtn} onClick={revealMockAnswer}>👁 Show answer</button>
+              </div>
+            </>
           )}
         </>
       )}
@@ -111,7 +129,10 @@ export default function MockTestPanel({
         <div style={styles.gameResults} className="bd-pop-in">
           <div style={styles.gameResultsTitle}>📝 Test complete</div>
           <div style={styles.gameResultsScore}>{mockTally.correct}/{mockLength} correct</div>
-          <div style={styles.gameResultsSub}>{accuracy}% accuracy · avg. {formatTime(avgTimeMs)} per question</div>
+          <div style={styles.gameResultsSub}>
+            {accuracy}% accuracy · avg. {formatTime(avgTimeMs)} per question
+            {mockTally.skipped > 0 && ` · ${mockTally.skipped} skipped`}
+          </div>
 
           {Object.keys(mockTally.byCat).length > 0 && (
             <div style={styles.gameResultsCatBreakdown}>
@@ -126,10 +147,12 @@ export default function MockTestPanel({
           <div style={styles.mockReviewList}>
             {mockReview.map((r, i) => (
               <div key={i} style={styles.mockReviewRow}>
-                <span style={styles.mockReviewIcon}>{r.correct ? "✅" : "❌"}</span>
+                <span style={styles.mockReviewIcon}>{r.skipped ? "⏭" : r.revealed ? "👁" : r.correct ? "✅" : "❌"}</span>
                 <span style={styles.mockReviewPrompt}>{r.prompt}</span>
                 <span style={styles.mockReviewAnswer}>
-                  {r.correct ? String(r.correctAnswer) : `${r.userAnswer || "—"} → ${r.correctAnswer}`}
+                  {r.skipped
+                    ? `skipped → ${r.correctAnswer}`
+                    : r.correct ? String(r.correctAnswer) : `${r.userAnswer || "—"} → ${r.correctAnswer}`}
                 </span>
               </div>
             ))}

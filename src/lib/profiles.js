@@ -17,13 +17,21 @@ const PROFILES_LIST_KEY = "buddhidrill-profiles";
 const ACTIVE_PROFILE_KEY = "buddhidrill-active-profile";
 export const DEFAULT_PROFILE_ID = "default";
 
+// Whether ANY profile data has ever been saved on this device — the one
+// reliable signal for "this is truly a first-time visit" (as opposed to
+// loadProfiles()'s fallback, which always returns something so the rest
+// of the app never has to null-check).
+export function hasSavedProfiles() {
+  try { return window.localStorage.getItem(PROFILES_LIST_KEY) !== null; } catch { return false; }
+}
+
 export function loadProfiles() {
   try {
     const raw = window.localStorage.getItem(PROFILES_LIST_KEY);
     const list = raw ? JSON.parse(raw) : null;
     if (Array.isArray(list) && list.length) return list;
   } catch { /* ignore */ }
-  return [{ id: DEFAULT_PROFILE_ID, name: "Player 1", avatar: "🧠", createdAt: Date.now() }];
+  return [{ id: DEFAULT_PROFILE_ID, name: "Player 1", username: null, dob: null, avatar: "🧠", createdAt: Date.now() }];
 }
 
 function saveProfiles(list) {
@@ -69,6 +77,27 @@ export function setProfileAvatar(id, avatar) {
   const next = loadProfiles().map((p) => (p.id === id ? { ...p, avatar } : p));
   saveProfiles(next);
   return next;
+}
+
+// Saves the one-time onboarding answers (display name, unique username,
+// date of birth) onto a profile. Called once right after the welcome
+// screen, and again whenever the person edits these from Settings.
+export function setProfileOnboardingInfo(id, { name, username, dob }) {
+  const next = loadProfiles().map((p) => (p.id === id
+    ? {
+      ...p,
+      name: (name || p.name).slice(0, 20),
+      username: username ? username.slice(0, 20) : p.username,
+      dob: dob || p.dob,
+    }
+    : p));
+  saveProfiles(next);
+  return next;
+}
+
+// True once the active profile has completed the welcome screen.
+export function isProfileOnboarded(profile) {
+  return !!(profile && profile.username);
 }
 
 // Deleting a profile only removes it from the roster — its namespaced

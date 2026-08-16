@@ -117,6 +117,15 @@ export const GLOBAL_CSS = `
   .bd-light .bd-mode-label { color: #6B5B3A !important; }
   .bd-light .bd-segment-scroll { border-color: #C9B98C !important; }
   .bd-light .bd-segment-scroll > button:not([data-active="true"]) { color: #6B5B3A !important; }
+  .bd-light .bd-mode-grid > button:not([data-active="true"]) {
+    border-color: #C9B98C !important; color: #6B5B3A !important;
+  }
+  .bd-light .bd-boss-banner { background: linear-gradient(90deg, rgba(232,178,61,0.22), rgba(232,178,61,0.05)) !important; }
+  .bd-light .bd-boss-banner-title { color: #241C0F !important; }
+  .bd-light .bd-smart-practice-card { background: rgba(255,255,255,0.5) !important; border-color: #D8CBA6 !important; }
+  .bd-light .bd-smart-toggle-row { border-top-color: #E3D9BE !important; }
+  .bd-light .bd-smart-toggle-row div { color: #3A3226 !important; }
+  .bd-light .bd-smart-toggle-row div div { color: #6B5B3A !important; }
   .bd-light .bd-sticky-hud {
     background: rgba(247,242,228,0.92) !important;
     border-color: #D8CBA6 !important;
@@ -259,8 +268,86 @@ export const styles = {
   },
   chipTag: { fontFamily: "'JetBrains Mono', monospace", marginRight: 4, opacity: 0.85 },
 
+  /* ---- Smart Practice card (Adaptive / Spaced repetition / Focus weak
+     spots) — replaces the old row of three identical on/off chip buttons,
+     which gave no room to explain what each toggle actually does. ---- */
+  smartPracticeCard: {
+    border: "1px solid #233448",
+    borderRadius: 14,
+    padding: "4px 16px",
+    marginBottom: 20,
+    background: "rgba(255,255,255,0.02)",
+  },
+  smartPracticeTitle: {
+    fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", color: "#6B7A89",
+    padding: "12px 0 4px",
+  },
+  smartToggleRow: {
+    display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14,
+    padding: "12px 0", borderTop: "1px solid #1B2A3A",
+  },
+  smartToggleInfo: { display: "flex", flexDirection: "column", gap: 3, minWidth: 0 },
+  smartToggleLabel: { display: "flex", alignItems: "center", gap: 7, fontSize: 13.5, fontWeight: 700, color: "#E7E1D3" },
+  smartToggleDesc: { fontSize: 11.5, color: "#93A6B8", lineHeight: 1.4 },
+  switchTrack: {
+    position: "relative", width: 40, height: 22, borderRadius: 999, border: "none",
+    flexShrink: 0, transition: "background 0.2s ease", padding: 0,
+  },
+  switchThumb: {
+    position: "absolute", top: 2, width: 18, height: 18, borderRadius: "50%",
+    background: "#F4EFE3", transition: "left 0.2s ease", boxShadow: "0 1px 3px rgba(0,0,0,0.3)",
+  },
+
   modeRow: { display: "flex", alignItems: "center", gap: 10, marginBottom: 20, flexWrap: "wrap" },
   modeLabel: { fontSize: 12.5, color: "#93A6B8", fontWeight: 600 },
+
+  /* ---- Mode grid (replaces the old horizontal-scroll mode nav) ----
+     Wraps naturally instead of scrolling sideways — every mode is visible
+     without a swipe, on any screen width. */
+  modeGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fill, minmax(78px, 1fr))",
+    gap: 8,
+    width: "100%",
+  },
+  modeGridBtn: {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 4,
+    border: "1.5px solid #3E566B",
+    borderRadius: 14,
+    padding: "10px 6px",
+    minHeight: 64,
+    transition: "all 0.15s ease",
+  },
+  modeGridIcon: { fontSize: 19, lineHeight: 1 },
+  modeGridLabel: { fontSize: 10.5, lineHeight: 1.2, textAlign: "center" },
+
+  /* ---- Boss challenge banner — deliberately separate from the mode grid,
+     framed as a one-off badge challenge rather than a mode to switch to. ---- */
+  bossBanner: {
+    display: "flex",
+    alignItems: "center",
+    gap: 12,
+    width: "100%",
+    textAlign: "left",
+    background: "linear-gradient(90deg, rgba(232,178,61,0.14), rgba(232,178,61,0.03))",
+    border: "1.5px dashed #E8B23D",
+    borderRadius: 14,
+    padding: "12px 16px",
+    marginBottom: 20,
+  },
+  bossBannerIcon: { fontSize: 26 },
+  bossBannerText: { display: "flex", flexDirection: "column", gap: 2, flex: 1 },
+  bossBannerTitle: { fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 14, color: "#F4EFE3" },
+  bossBannerSub: { fontSize: 11.5, color: "#93A6B8" },
+  bossBannerBadge: {
+    fontSize: 11, fontWeight: 700, color: "#0B1929", background: "#E8B23D",
+    borderRadius: 999, padding: "4px 10px", whiteSpace: "nowrap",
+  },
+
   segmentGroup: {
     display: "flex",
     border: "1.5px solid #3E566B",
@@ -487,6 +574,11 @@ export const styles = {
     textTransform: "uppercase",
   },
   itemTag: { fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: "#8A7F63" },
+  difficultyBadge: {
+    fontSize: 10.5, fontWeight: 700, border: "1px solid", borderRadius: 999,
+    padding: "3px 9px", whiteSpace: "nowrap", background: "rgba(255,255,255,0.03)",
+  },
+  difficultyBadgeSub: { fontWeight: 500, opacity: 0.85 },
 
   emptyState: { padding: "30px 0", textAlign: "center", color: "#8A7F63", fontSize: 14 },
 
@@ -777,6 +869,8 @@ export const styles = {
   catBarTrack: { flex: 1, height: 14, borderRadius: 999, background: "rgba(31,41,55,0.08)", overflow: "hidden" },
   catBarFill: { height: "100%", borderRadius: 999 },
   catBarPct: { width: 44, flexShrink: 0, fontSize: 11.5, fontFamily: "'JetBrains Mono', monospace", color: "#4B5A6B" },
+  adaptiveArrow: { width: 16, flexShrink: 0, fontSize: 14, fontWeight: 700, textAlign: "center" },
+  adaptiveDetail: { fontSize: 11.5, color: "#6B7A89", flex: 1 },
 
   learningCurveEmpty: { fontSize: 12.5, color: "#8A7F63", textAlign: "center", padding: "20px 0" },
 
@@ -911,6 +1005,18 @@ export const styles = {
   mockReviewPrompt: { flex: 1, fontSize: 12.5, color: "#1F2937" },
   mockReviewAnswer: { fontSize: 11.5, fontFamily: "'JetBrains Mono', monospace", color: "#6B7A89", flexShrink: 0 },
   mockProgressLabel: { fontSize: 12.5, color: "#8A7F63", fontFamily: "'JetBrains Mono', monospace" },
+  mockUtilityRow: { display: "flex", gap: 10, marginTop: 12, justifyContent: "flex-end" },
+  mockUtilityBtn: {
+    fontSize: 12, fontWeight: 600, color: "#6B7A89", background: "transparent",
+    border: "1.5px solid #D8CFB8", borderRadius: 999, padding: "7px 14px",
+  },
+  mockRevealBox: {
+    display: "flex", flexDirection: "column", alignItems: "center", gap: 10,
+    padding: "18px 16px", marginTop: 6, borderRadius: 12,
+    background: "rgba(31,111,92,0.08)", border: "1.5px dashed #1F6F5C",
+  },
+  mockRevealLabel: { fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", color: "#1F6F5C" },
+  mockRevealValue: { fontSize: 26, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", color: "#1F2937" },
 
   /* ---- Boss Level ---- */
   bossIntroTitle: {
@@ -1000,6 +1106,50 @@ export const styles = {
     transition: "all 0.15s ease",
   },
 
+  /* ---- Onboarding (first-run welcome screen) ---- */
+  onboardOverlay: {
+    position: "fixed", inset: 0, background: "#0B1929",
+    display: "flex", alignItems: "center", justifyContent: "center",
+    padding: 20, zIndex: 100,
+  },
+  onboardCard: {
+    background: "#F4EFE3", borderRadius: 20, padding: "28px 24px 26px",
+    maxWidth: 420, width: "100%", maxHeight: "92vh", overflowY: "auto",
+    boxShadow: "0 24px 70px rgba(0,0,0,0.5)",
+  },
+  onboardEyebrow: {
+    fontSize: 11, fontWeight: 700, letterSpacing: "0.14em", color: "#8A4B2B", textAlign: "center",
+  },
+  onboardTitle: {
+    fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 30,
+    color: "#1F2937", textAlign: "center", marginTop: 2,
+  },
+  onboardSubtitle: {
+    fontSize: 13, color: "#6B7A89", textAlign: "center", marginTop: 8, marginBottom: 22, lineHeight: 1.5,
+  },
+  onboardForm: { display: "flex", flexDirection: "column", gap: 16 },
+  onboardLabel: { display: "flex", flexDirection: "column", gap: 6, fontSize: 12.5, fontWeight: 700, color: "#3A3226" },
+  onboardInput: {
+    padding: "12px 14px", borderRadius: 10, border: "1.5px solid #D8CFB8",
+    background: "#FFFDF7", color: "#1F2937", fontSize: 16, fontWeight: 500,
+  },
+  onboardUsernameWrap: { display: "flex", alignItems: "stretch", gap: 0 },
+  onboardUsernamePrefix: {
+    display: "flex", alignItems: "center", justifyContent: "center",
+    padding: "0 0 0 14px", borderRadius: "10px 0 0 10px", border: "1.5px solid #D8CFB8", borderRight: "none",
+    background: "#FFFDF7", color: "#8A4B2B", fontWeight: 700, fontSize: 16, lineHeight: 1,
+  },
+  onboardUsernameInput: { borderRadius: "0 10px 10px 0", flex: 1 },
+  onboardHint: { fontSize: 11, color: "#93876A", fontWeight: 500 },
+  onboardError: {
+    background: "#F6E4E1", border: "1px solid #C0392B", color: "#8E2E1E",
+    borderRadius: 10, padding: "9px 12px", fontSize: 12.5, fontWeight: 600,
+  },
+  onboardSubmitBtn: {
+    background: "var(--bd-accent, #E8B23D)", color: "#0B1929", border: "none",
+    borderRadius: 12, padding: "13px 16px", fontWeight: 700, fontSize: 15, marginTop: 4,
+  },
+
   /* ---- Generic modal (ShareCardModal) ---- */
   modalOverlay: {
     position: "fixed", inset: 0, background: "rgba(8,14,22,0.72)",
@@ -1069,7 +1219,11 @@ export const styles = {
     borderRadius: 999, padding: "7px 14px", fontSize: 13, fontWeight: 600,
   },
   profileSwitcherMenu: {
-    position: "absolute", top: "110%", left: 0, zIndex: 40, minWidth: 240,
+    // was zIndex: 40, same as .stickyHud (also 40) — on mobile, once the page
+    // scrolls the sticky HUD becomes a later paint in the same stacking
+    // context and covers the open dropdown. Needs to sit above it (but below
+    // the badge toast/modal layers at 50/60).
+    position: "absolute", top: "110%", left: 0, zIndex: 45, minWidth: 240,
     background: "#F4EFE3", borderRadius: 12, padding: "10px 12px",
     boxShadow: "0 12px 32px rgba(0,0,0,0.35)",
   },

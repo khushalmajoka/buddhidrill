@@ -27,17 +27,39 @@ function saveXP(xp) {
   try { window.localStorage.setItem(pkey(XP_KEY), String(xp)); } catch { /* ignore */ }
 }
 
-// Cumulative XP required to REACH a given level (level 1 = 0 XP).
-// Quadratic-ish growth: level 2 needs 100, level 3 needs 300, level 4
-// needs 600, level 5 needs 1000, ... — early levels come fast (feels
-// rewarding immediately), later ones stretch out.
-export function xpForLevel(level) {
-  return Math.round(50 * (level - 1) * level);
+// Level curve, tuned for a 1→100 climb: the XP needed for EACH single
+// step up (level N → N+1) grows on its own, every level, not just in
+// broad bands — L1→2 is a handful of correct answers, L2→3 needs a bit
+// more, L3→4 more still, and so on, all the way to a serious grind by
+// L99→100. Modeled as step(level) = ROUND_UNIT * level^1.4, which keeps
+// early steps small (step(1)=40) while the later ones dominate the total
+// (step(99)≈24,600) — so most of a player's XP over time goes toward the
+// last handful of levels, which is what makes late levels feel earned.
+// xpForLevel is cumulative XP to REACH `level` (level 1 = 0 XP) and is
+// just the running sum of every step below it.
+const LEVEL_STEP_UNIT = 40;
+const LEVEL_STEP_EXPONENT = 1.4;
+
+function xpStep(level) {
+  // step FROM `level` TO `level + 1`
+  return Math.round(LEVEL_STEP_UNIT * Math.pow(level, LEVEL_STEP_EXPONENT));
 }
+
+const _levelTotals = [0]; // _levelTotals[i] = cumulative XP to reach level i+1
+function xpForLevel(level) {
+  const idx = level - 1;
+  while (_levelTotals.length <= idx) {
+    const lvl = _levelTotals.length; // level we're about to add the floor for
+    _levelTotals.push(_levelTotals[lvl - 1] + xpStep(lvl));
+  }
+  return _levelTotals[idx];
+}
+
+export { xpForLevel };
 
 export function levelFromXP(xp) {
   let level = 1;
-  while (xpForLevel(level + 1) <= xp) level++;
+  while (level < 100 && xpForLevel(level + 1) <= xp) level++;
   return level;
 }
 

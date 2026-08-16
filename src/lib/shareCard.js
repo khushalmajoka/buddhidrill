@@ -43,7 +43,7 @@ export function drawResultCard(canvas, opts) {
   ctx.fillStyle = accent;
   ctx.font = "700 30px 'Space Grotesk', sans-serif";
   ctx.textBaseline = "alphabetic";
-  ctx.fillText("BUDDHIDRILL · BRAIN GAMES", 70, 130);
+  ctx.fillText("LOGIKS · BRAIN GAMES", 70, 130);
 
   // title
   ctx.fillStyle = "#F5F1E6";
@@ -88,7 +88,7 @@ export function drawResultCard(canvas, opts) {
   // footer
   ctx.fillStyle = accent;
   ctx.font = "700 34px 'Space Grotesk', sans-serif";
-  ctx.fillText(opts.footer || "buddhidrill.app", 70, H - 90);
+  ctx.fillText(opts.footer || "logiks.app", 70, H - 90);
   ctx.fillStyle = "#5B6B7A";
   ctx.font = "500 26px 'Inter', sans-serif";
   ctx.fillText(new Date().toLocaleDateString(), 70, H - 50);
@@ -123,7 +123,7 @@ export async function downloadCanvasPng(canvas, filename) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = filename || "buddhidrill.png";
+  a.download = filename || "logiks.png";
   document.body.appendChild(a);
   a.click();
   a.remove();
@@ -136,10 +136,10 @@ export async function downloadCanvasPng(canvas, filename) {
 export async function shareCanvasPng(canvas, filename, shareText) {
   const blob = await canvasToPngBlob(canvas);
   if (!blob) return false;
-  const file = new File([blob], filename || "buddhidrill.png", { type: "image/png" });
+  const file = new File([blob], filename || "logiks.png", { type: "image/png" });
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
     try {
-      await navigator.share({ files: [file], title: "BuddhiDrill", text: shareText || "" });
+      await navigator.share({ files: [file], title: "Logiks", text: shareText || "" });
       return true;
     } catch {
       return false;

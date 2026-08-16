@@ -38,7 +38,7 @@ export default function ReminderSettings({ pref, permission, supported, onToggle
           )}
 
           <div style={styles.cardHint}>
-            If you haven't practiced by this time and BuddhiDrill is open in a tab, you'll get a one-time nudge. Browsers don't allow reliable notifications from fully closed tabs, so keep a tab open (even in the background) for this to fire.
+            If you haven't practiced by this time and Logiks is open in a tab, you'll get a one-time nudge. Browsers don't allow reliable notifications from fully closed tabs, so keep a tab open (even in the background) for this to fire.
           </div>
         </>
       )}

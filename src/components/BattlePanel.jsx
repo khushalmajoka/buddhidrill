@@ -299,18 +299,12 @@ export default function BattlePanel({
                 {CATEGORY_META[q.category].label}
               </span>
               <span style={styles.gameTimer}>⏱ {battleTimeLeft}s</span>
+              <span style={styles.gameScoreLive}>{battleScore.correct + battleScore.wrong} answered</span>
             </div>
 
-            <div style={styles.battleScoreRow}>
-              <div style={styles.battleScoreBox}>
-                <div style={styles.gameHint}>You</div>
-                <div style={styles.battleScoreNum}>{battleScore.correct}</div>
-              </div>
-              <div style={styles.battleScoreBox}>
-                <div style={styles.gameHint}>{opponent ? opponent.name : "Opponent"}</div>
-                <div style={styles.battleScoreNum}>{opponent && opponent.score ? opponent.score.correct : 0}</div>
-              </div>
-            </div>
+            {/* No live opponent comparison here on purpose — both scores
+                reveal together on the results screen once the battle ends,
+                same "stats after, not during" pattern as Game/Mock/Team. */}
 
             <div style={styles.gamePromptText} className="bd-prompt">{q.prompt}</div>
 

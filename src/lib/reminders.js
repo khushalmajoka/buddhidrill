@@ -2,7 +2,7 @@
    DAILY PRACTICE REMINDER
    Browser notifications can't reliably fire from a fully closed tab
    without a service worker + push server, so this is a deliberately
-   honest best-effort version: while BuddhiDrill is open in a tab, it
+   honest best-effort version: while Logiks is open in a tab, it
    checks once a minute whether the person's preferred time has passed
    and they haven't practiced yet today, and fires a single native
    Notification if so (never more than once per day).
@@ -46,7 +46,7 @@ export async function requestNotificationPermission() {
 export function fireReminderNotification() {
   if (!notificationsSupported()) return;
   try {
-    new Notification("BuddhiDrill", {
+    new Notification("Logiks", {
       body: "Haven't done today's math workout yet — quick 5-minute drill?",
     });
   } catch { /* ignore — some browsers block Notification() outside a user gesture in edge cases */ }

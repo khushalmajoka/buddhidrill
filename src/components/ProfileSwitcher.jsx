@@ -15,7 +15,7 @@ export default function ProfileSwitcher({ profiles, activeId, onSwitch, onCreate
   return (
     <div style={styles.profileSwitcherWrap}>
       <button style={styles.profileSwitcherBtn} onClick={() => setOpen((o) => !o)} type="button">
-        {active.avatar} {active.name} ▾
+        {active.avatar} {active.name}{active.username ? ` · @${active.username}` : ""} ▾
       </button>
       {open && (
         <div style={styles.profileSwitcherMenu}>

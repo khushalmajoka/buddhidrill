@@ -287,8 +287,10 @@ export default function TeamPanel({ playerName }) {
               {CATEGORY_META[question.category].label}
             </span>
             <span style={styles.gameTimer}>⏱ {timeLeft}s</span>
-            <span style={styles.gameScoreLive}>A {teamATotal} — B {teamBTotal}</span>
+            <span style={styles.gameScoreLive}>{(players.find((p) => p.id === uid)?.score) || 0} answered</span>
           </div>
+          {/* Team totals stay hidden mid-race — both teams' scores reveal
+              together on the results screen once the match ends. */}
           <div style={styles.gamePromptText} className="bd-prompt">{question.prompt}</div>
           {question.type === "mcq" ? (
             <div style={styles.optionsGrid} className="bd-options-grid">

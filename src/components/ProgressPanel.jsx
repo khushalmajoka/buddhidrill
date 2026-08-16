@@ -1,6 +1,7 @@
 import { styles } from "../styles";
 import { CATEGORY_ORDER, CATEGORY_META } from "../constants";
 import { allTimeSummary, categoryAccuracy, lastNDays } from "../stats";
+import { levelForCategory, rollingAccuracy } from "../lib/adaptive";
 import StreakCalendar from "./StreakCalendar";
 import BadgesPanel from "./BadgesPanel";
 
@@ -104,8 +105,27 @@ function CategoryBar({ cat, entry }) {
   );
 }
 
+// One row per category that Adaptive has touched — shows whether its
+// range has widened (you're doing well, it's tightening the screws),
+// narrowed (easing off after a rough patch), or is still gathering signal.
+function AdaptiveRow({ meta, level, acc }) {
+  const pct = Math.round((level - 1) * 100);
+  const arrow = pct > 1 ? "▲" : pct < -1 ? "▼" : "•";
+  const tone = pct > 1 ? "#1F6F5C" : pct < -1 ? "#C0392B" : "#8A7F63";
+  const rangeText = Math.abs(pct) < 1 ? "baseline range" : `${pct > 0 ? "+" : ""}${pct}% range width`;
+  const accText = acc === null ? "calibrating…" : `${Math.round(acc * 100)}% recent accuracy`;
+  return (
+    <div style={styles.catBarRow}>
+      <span style={styles.catBarLabel}>{meta.label}</span>
+      <span style={{ ...styles.adaptiveArrow, color: tone }}>{arrow}</span>
+      <span style={styles.adaptiveDetail}>{rangeText} · {accText}</span>
+    </div>
+  );
+}
+
 export default function ProgressPanel({
   stats, history, session, bestStreakEver, xpProgress, unlockedBadges, themeId, setTheme,
+  adaptiveOn, adaptiveState,
 }) {
   const summary = allTimeSummary(stats);
   const days = lastNDays(history, 14);
@@ -113,6 +133,12 @@ export default function ProgressPanel({
   const categoriesWithData = CATEGORY_ORDER
     .map((cat) => ({ cat, entry: categoryAccuracy(stats, cat) }))
     .filter((c) => c.entry.total > 0);
+
+  const adaptiveRows = adaptiveOn
+    ? CATEGORY_ORDER
+      .map((cat) => ({ cat, level: levelForCategory(adaptiveState, cat), acc: rollingAccuracy(adaptiveState, cat) }))
+      .filter((r) => r.level !== 1 || r.acc !== null)
+    : [];
 
   return (
     <div style={styles.progressPanel} className="bd-card">
@@ -159,6 +185,17 @@ export default function ProgressPanel({
         <div style={styles.learningCurveEmpty}>Answer a few questions in any category and your breakdown shows up here.</div>
       ) : (
         categoriesWithData.map(({ cat, entry }) => <CategoryBar key={cat} cat={cat} entry={entry} />)
+      )}
+
+      {adaptiveOn && (
+        <>
+          <div style={styles.progressSectionTitle}>Adaptive difficulty</div>
+          {adaptiveRows.length === 0 ? (
+            <div style={styles.learningCurveEmpty}>Adaptive is on — once you've answered enough in a category, whether its range is widening or narrowing shows up here.</div>
+          ) : (
+            adaptiveRows.map((r) => <AdaptiveRow key={r.cat} meta={CATEGORY_META[r.cat]} level={r.level} acc={r.acc} />)
+          )}
+        </>
       )}
 
       {xpProgress && (

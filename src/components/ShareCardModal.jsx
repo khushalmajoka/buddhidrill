@@ -14,11 +14,11 @@ export default function ShareCardModal({ cardData, onClose }) {
 
   if (!cardData) return null;
 
-  const filename = `buddhidrill-${(cardData.title || "result").toLowerCase().replace(/[^a-z0-9]+/g, "-")}.png`;
+  const filename = `logiks-${(cardData.title || "result").toLowerCase().replace(/[^a-z0-9]+/g, "-")}.png`;
 
   async function handleShare() {
     setBusy(true); setNote("");
-    const shared = await shareCanvasPng(canvasRef.current, filename, "Check out my BuddhiDrill result!");
+    const shared = await shareCanvasPng(canvasRef.current, filename, "Check out my Logiks result!");
     if (!shared) {
       const ok = await downloadCanvasPng(canvasRef.current, filename);
       setNote(ok ? "Image downloaded — share it anywhere you like!" : "Couldn't generate the image. Try again.");

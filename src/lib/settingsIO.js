@@ -16,7 +16,7 @@ export function buildSettingsSnapshot({
   adaptiveOn, spacedRepOn, reminderPref, bigText,
 }) {
   return {
-    schema: "buddhidrill-settings",
+    schema: "logiks-settings",
     version: SETTINGS_SCHEMA_VERSION,
     exportedAt: new Date().toISOString(),
     settings: {
@@ -32,7 +32,7 @@ export function exportSettingsFile(snapshot) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `buddhidrill-settings-${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `logiks-settings-${new Date().toISOString().slice(0, 10)}.json`;
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -52,8 +52,11 @@ export function importSettingsFile(file) {
     reader.onload = () => {
       try {
         const parsed = JSON.parse(String(reader.result));
-        if (!parsed || parsed.schema !== "buddhidrill-settings" || !parsed.settings) {
-          reject(new Error("That doesn't look like a BuddhiDrill settings file."));
+        // accepts both the current schema and the pre-rename "buddhidrill-settings"
+        // schema so files exported before the Logiks rename still import cleanly
+        const validSchema = parsed && (parsed.schema === "logiks-settings" || parsed.schema === "buddhidrill-settings");
+        if (!validSchema || !parsed.settings) {
+          reject(new Error("That doesn't look like a Logiks settings file."));
           return;
         }
         resolve(parsed.settings);
