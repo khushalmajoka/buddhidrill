@@ -1136,7 +1136,8 @@ export const styles = {
   onboardUsernameWrap: { display: "flex", alignItems: "stretch", gap: 0 },
   onboardUsernamePrefix: {
     display: "flex", alignItems: "center", justifyContent: "center",
-    padding: "0 0 0 14px", borderRadius: "10px 0 0 10px", border: "1.5px solid #D8CFB8", borderRight: "none",
+    width: 40, flexShrink: 0,
+    borderRadius: "10px 0 0 10px", border: "1.5px solid #D8CFB8", borderRight: "none",
     background: "#FFFDF7", color: "#8A4B2B", fontWeight: 700, fontSize: 16, lineHeight: 1,
   },
   onboardUsernameInput: { borderRadius: "0 10px 10px 0", flex: 1 },
